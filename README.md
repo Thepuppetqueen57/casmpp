@@ -1,5 +1,7 @@
-# CASM
-CASM is a high-level assembly inspired interpreted language designed to make working with registers easier and more high-level. It supports things like printing, and other stuff.
+# CASM++
+CASM++ is a high-level assembly inspired interpreted language designed to make working with registers easier and more high-level.
+
+CASM++ is a fork of my old project from years ago called [CASM](https://github.com/The-Puppet-Studios/casm).
 
 # Documentation
 ## Out
@@ -21,7 +23,7 @@ sml smallint = 1;
 ```
 
 ## If Else
-To do an if else you need to define a syntax like this:
+To do an if else you need to define it like this:
 
 ```
 int cooler = 5;
@@ -41,11 +43,7 @@ To add a comment you need to put a hashtag at the beginning of the line. Like th
 ```
 
 ## Input
-To make an input variable you need to add in to the beginning.
-
-Also for input variables dont add an equals sign. It considers the = as part of the prompt.
-
-That will be fixed at some point.
+To make an input variable you need to add "in" to the beginning of a normal variable declaration.
 
 Anyways with input variables if you define them as int for example the user has to put in an integar.
 
