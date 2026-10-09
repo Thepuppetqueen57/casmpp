@@ -9,6 +9,9 @@ This is because back when I made CASM I vibecoded everything for some reason
 
 And now I just wanna see how far I can get with ai nowadays since its improved so much
 
+# Compile Guide
+Just install clang and gnu-make and then run the makefile
+
 # Documentation
 ## Out
 To print something you can use the out function. Heres an example:
