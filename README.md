@@ -3,6 +3,12 @@ CASM++ is a high-level assembly inspired interpreted language designed to make w
 
 CASM++ is a fork of my old project from years ago called [CASM](https://github.com/The-Puppet-Studios/casm).
 
+CASM and CASM++ are both completely vibecoded.
+
+This is because back when I made CASM I vibecoded everything for some reason
+
+And now I just wanna see how far I can get with ai nowadays since its improved so much
+
 # Documentation
 ## Out
 To print something you can use the out function. Heres an example:
