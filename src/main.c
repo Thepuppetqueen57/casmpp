@@ -2,6 +2,17 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <errno.h>
+
+/* ─────────────────────────────────────────────
+   TERMINAL COLORS
+   ───────────────────────────────────────────── */
+
+/* ANSI escape sequences used to color diagnostic output.
+   Warnings are printed in yellow, errors in red. */
+#define COLOR_RED    "\x1b[31m"
+#define COLOR_YELLOW "\x1b[33m"
+#define COLOR_RESET  "\x1b[0m"
 
 /* ─────────────────────────────────────────────
    CONSTANTS
@@ -64,7 +75,7 @@ Variable *find_variable(const char *name) {
    - value : the initial value as a raw string (e.g. "42", "hello", "1") */
 void add_variable(const char *name, VarType type, const char *value) {
     if (variable_count >= MAX_VARIABLES) {
-        printf("Error: Too many variables (limit is %d)\n", MAX_VARIABLES);
+        printf(COLOR_RED "Error: Too many variables (limit is %d)" COLOR_RESET "\n", MAX_VARIABLES);
         return;
     }
 
@@ -94,7 +105,7 @@ char *trim_whitespace(const char *str) {
     /* Work on a duplicate so we don't modify the caller's string. */
     char *copy = strdup(str);
     if (!copy) {
-        perror("trim_whitespace: strdup failed");
+        fprintf(stderr, COLOR_RED "trim_whitespace: strdup failed: %s" COLOR_RESET "\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
 
@@ -119,7 +130,7 @@ char *trim_whitespace(const char *str) {
 
     char *trimmed = strdup(start);
     if (!trimmed) {
-        perror("trim_whitespace: second strdup failed");
+        fprintf(stderr, COLOR_RED "trim_whitespace: second strdup failed: %s" COLOR_RESET "\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
 
@@ -142,14 +153,14 @@ void cmd_input(char *args) {
     char *prompt   = saveptr;                         /* e.g. "Enter your age: " */
 
     if (!type_str || !var_name || !prompt) {
-        printf("Syntax error: 'in' expects: in <type> <name> \"prompt\"\n");
+        printf(COLOR_RED "Syntax error: 'in' expects: in <type> <name> \"prompt\"" COLOR_RESET "\n");
         return;
     }
 
     /* Strip the surrounding quotes from the prompt string. */
     prompt = strtok(prompt, "\"");
     if (!prompt) {
-        printf("Syntax error: prompt string must be surrounded by quotes\n");
+        printf(COLOR_RED "Syntax error: prompt string must be surrounded by quotes" COLOR_RESET "\n");
         return;
     }
 
@@ -157,7 +168,7 @@ void cmd_input(char *args) {
     printf("%s", prompt);
     char input[MAX_STR_LEN];
     if (fgets(input, sizeof(input), stdin) == NULL) {
-        printf("Error: could not read input\n");
+        printf(COLOR_RED "Error: could not read input" COLOR_RESET "\n");
         return;
     }
     input[strcspn(input, "\n")] = '\0'; /* strip the trailing newline */
@@ -170,7 +181,7 @@ void cmd_input(char *args) {
         char *endptr;
         long num = strtol(input, &endptr, 10);
         if (*endptr != '\0') {
-            printf("Error: '%s' is not a valid integer for variable '%s'\n", input, var_name);
+            printf(COLOR_RED "Error: '%s' is not a valid integer for variable '%s'" COLOR_RESET "\n", input, var_name);
             return;
         }
         char num_str[32];
@@ -181,11 +192,11 @@ void cmd_input(char *args) {
         if (strcmp(input, "0") == 0 || strcmp(input, "1") == 0) {
             add_variable(var_name, TYPE_SML, input);
         } else {
-            printf("Error: sml variable '%s' must be 0 or 1, got '%s'\n", var_name, input);
+            printf(COLOR_RED "Error: sml variable '%s' must be 0 or 1, got '%s'" COLOR_RESET "\n", var_name, input);
         }
 
     } else {
-        printf("Error: unknown type '%s' in 'in' command\n", type_str);
+        printf(COLOR_RED "Error: unknown type '%s' in 'in' command" COLOR_RESET "\n", type_str);
     }
 }
 
@@ -208,7 +219,7 @@ void cmd_output(char *args, int line_num) {
             else if (var->type == TYPE_STR) printf("%s\n", var->value.strValue);
             else if (var->type == TYPE_SML) printf("%d\n", var->value.smlValue);
         } else {
-            printf("Error: unknown variable '%s' on line %d\n", trimmed, line_num);
+            printf(COLOR_RED "Error: unknown variable '%s' on line %d" COLOR_RESET "\n", trimmed, line_num);
         }
     }
 
@@ -235,7 +246,7 @@ void run_command(char *line, int line_num) {
         cmd_input(line + strlen(command) + 1);
 
     } else {
-        printf("Error: unknown command '%s' on line %d\n", command, line_num);
+        printf(COLOR_RED "Error: unknown command '%s' on line %d" COLOR_RESET "\n", command, line_num);
     }
 }
 
@@ -261,13 +272,13 @@ void process_if_block(FILE *file, char *condition_line, int *line_num) {
     char *cmp_value = strtok(NULL, " ");   /* value to compare against */
 
     if (!var_name || !op || !cmp_value) {
-        printf("Syntax error: 'if' expects: if <var> == <value>\n");
+        printf(COLOR_RED "Syntax error: 'if' expects: if <var> == <value>" COLOR_RESET "\n");
         return;
     }
 
     Variable *var = find_variable(var_name);
     if (!var) {
-        printf("Error: variable '%s' not found (line %d)\n", var_name, *line_num);
+        printf(COLOR_RED "Error: variable '%s' not found (line %d)" COLOR_RESET "\n", var_name, *line_num);
         return;
     }
 
@@ -311,7 +322,7 @@ void process_if_block(FILE *file, char *condition_line, int *line_num) {
     }
 
     if (!found_end) {
-        printf("Error: if-block starting before line %d has no matching 'end'\n", *line_num);
+        printf(COLOR_RED "Error: if-block starting before line %d has no matching 'end'" COLOR_RESET "\n", *line_num);
     }
 }
 
@@ -323,7 +334,7 @@ void process_if_block(FILE *file, char *condition_line, int *line_num) {
 void interpret_file(const char *filename) {
     FILE *file = fopen(filename, "r");
     if (!file) {
-        printf("Error: could not open file '%s'\n", filename);
+        printf(COLOR_RED "Error: could not open file '%s'" COLOR_RESET "\n", filename);
         return;
     }
 
@@ -395,17 +406,17 @@ int main(int argc, char *argv[]) {
     const char *extension = strrchr(filename, '.');
 
     if (extension == NULL) {
-        printf("Error: file has no extension — please provide a .casmpp file\n");
+        printf(COLOR_RED "Error: file has no extension — please provide a .casmpp file" COLOR_RESET "\n");
         return 1;
     }
 
     if (strcmp(extension, ".casm") == 0) {
-        printf("Warning: Running a .casm file\n");
-        printf(".casm files are deprecated, please use .casmpp instead.\n");
+        printf(COLOR_YELLOW "Warning: Running a .casm file" COLOR_RESET "\n");
+        printf(COLOR_YELLOW ".casm files are deprecated, please use .casmpp instead." COLOR_RESET "\n");
     }
 
     if (strcmp(extension, ".casmpp") != 0 && strcmp(extension, ".casm") != 0) {
-        printf("Error: '%s' is not a valid file extension\n", filename);
+        printf(COLOR_RED "Error: '%s' is not a valid file extension" COLOR_RESET "\n", filename);
         return 1;
     }
 
