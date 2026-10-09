@@ -15,7 +15,7 @@
    TYPES
    ───────────────────────────────────────────── */
 
-/* The three variable types supported by CASM:
+/* The three variable types supported by CASM++:
      int  — a whole number (e.g. 42)
      str  — a piece of text (e.g. "hello")
      sml  — a tiny flag, either 0 or 1 */
@@ -319,7 +319,7 @@ void process_if_block(FILE *file, char *condition_line, int *line_num) {
    MAIN INTERPRETER LOOP
    ───────────────────────────────────────────── */
 
-/* Open a .casm file and execute it line by line. */
+/* Open a .casm++ file and execute it line by line. */
 void interpret_file(const char *filename) {
     FILE *file = fopen(filename, "r");
     if (!file) {
@@ -385,7 +385,7 @@ void interpret_file(const char *filename) {
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
-        printf("Usage: casm <file.casm>\n");
+        printf("Usage: casmpp <file.casmpp>\n");
         return 1;
     }
 
@@ -395,17 +395,17 @@ int main(int argc, char *argv[]) {
     const char *extension = strrchr(filename, '.');
 
     if (extension == NULL) {
-        printf("Error: file has no extension — please provide a .casm file\n");
+        printf("Error: file has no extension — please provide a .casmpp file\n");
         return 1;
     }
 
-    if (strcmp(extension, ".casmpp") == 0) {
-        printf("Error: this is a CASM++ file — use the casm++ interpreter instead\n");
-        return 1;
+    if (strcmp(extension, ".casm") == 0) {
+        printf("Warning: Running a .casm file\n");
+        printf(".casm files are deprecated, please use .casmpp instead.\n");
     }
 
-    if (strcmp(extension, ".casm") != 0) {
-        printf("Error: '%s' is not a .casm file\n", filename);
+    if (strcmp(extension, ".casmpp") != 0 && strcmp(extension, ".casm") != 0) {
+        printf("Error: '%s' is not a valid file extension\n", filename);
         return 1;
     }
 

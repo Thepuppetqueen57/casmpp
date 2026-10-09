@@ -25,7 +25,7 @@ CC = clang
 OUTDIR = out
 
 # Target executable
-TARGET = $(OUTDIR)/casm$(EXEEXT)
+TARGET = $(OUTDIR)/casmpp$(EXEEXT)
 
 # Source files
 SRC = src/main.c
