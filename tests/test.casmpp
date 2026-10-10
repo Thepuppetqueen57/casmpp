@@ -25,3 +25,11 @@ in sml smlinput "Input a small integar (1 or 0): ";
 out input;
 out intinput;
 out smlinput;
+
+in int iftest "Input another integar: ";
+
+if iftest != 73
+    out "makes sense";
+else
+    out "wowie!! you put in 73!!";
+end
