@@ -266,10 +266,23 @@ void run_command(char *line, int line_num) {
    line_num is updated as new lines are read so error messages stay accurate. */
 void process_if_block(FILE *file, char *condition_line, int *line_num) {
     /* Parse:  if  <varname>  <op>  <value> */
-    strtok(condition_line, " ");           /* discard "if" keyword */
-    char *var_name  = strtok(NULL, " ");   /* variable to test     */
-    char *op        = strtok(NULL, " ");   /* operator: == or !=    */
-    char *cmp_value = strtok(NULL, " ");   /* value to compare against */
+    char *saveptr = NULL;
+    strtok_r(condition_line, " ", &saveptr);         /* discard "if" keyword */
+    char *var_name  = strtok_r(NULL, " ", &saveptr); /* variable to test     */
+    char *op        = strtok_r(NULL, " ", &saveptr); /* operator: == or !=   */
+
+    /* The compared value is the whole remaining text on the line, not just the
+       next token: taking one token would cut a quoted string at its first
+       space, so "this is a str" would compare as "this. */
+    char *cmp_value = saveptr;
+    if (cmp_value) {
+        while (*cmp_value == ' ' || *cmp_value == '\t') {
+            cmp_value++;
+        }
+        if (*cmp_value == '\0') {
+            cmp_value = NULL;
+        }
+    }
 
     if (!var_name || !op || !cmp_value) {
         printf(COLOR_RED "Syntax error: 'if' expects: if <var> <op> <value> (operators: ==, !=)" COLOR_RESET "\n");

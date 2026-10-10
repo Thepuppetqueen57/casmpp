@@ -26,10 +26,18 @@ out input;
 out intinput;
 out smlinput;
 
-in int iftest "Input another integar: ";
+in int ifnottest "Input another integar: ";
 
-if iftest != 73
+if ifnottest != 73
     out "makes sense";
 else
     out "wowie!! you put in 73!!";
+end
+
+str fancystr = "this is a str";
+
+if fancystr == "this is a str";
+    out "it is indeed a str";
+else
+    out "awh man"
 end

@@ -32,7 +32,7 @@ sml smallint = 1;
 ```
 
 ## If Else
-To do an if else you need to define it like this:
+Example of a simple if else:
 
 ```
 int cooler = 5;
@@ -43,6 +43,8 @@ else
     out "Nope.";
 end
 ```
+
+Supported operators: == !=
 
 ## Comments
 To add a comment you need to put a hashtag at the beginning of the line. Like this:
