@@ -263,7 +263,11 @@ void run_command(char *line, int line_num) {
        end
 
    Supported operators: == (equal) and != (not equal).
-   line_num is updated as new lines are read so error messages stay accurate. */
+   line_num is updated as new lines are read so error messages stay accurate.
+
+   If the header is invalid (bad syntax, unknown variable, unknown operator) the
+   error is reported once and neither branch runs — but the block is still
+   consumed up to its "end" so the body is never executed as top-level commands. */
 void process_if_block(FILE *file, char *condition_line, int *line_num) {
     /* Parse:  if  <varname>  <op>  <value> */
     char *saveptr = NULL;
@@ -284,44 +288,54 @@ void process_if_block(FILE *file, char *condition_line, int *line_num) {
         }
     }
 
+    /* Validate the header first. We only report an error here and keep going:
+       the block below must still be read, otherwise its body lines would be
+       executed at the top level and its "else"/"end" reported as unknown. */
+    int header_ok = 1;
+
     if (!var_name || !op || !cmp_value) {
         printf(COLOR_RED "Syntax error: 'if' expects: if <var> <op> <value> (operators: ==, !=)" COLOR_RESET "\n");
-        return;
-    }
-
-    Variable *var = find_variable(var_name);
-    if (!var) {
-        printf(COLOR_RED "Error: variable '%s' not found (line %d)" COLOR_RESET "\n", var_name, *line_num);
-        return;
-    }
+        header_ok = 0;
 
     /* Only == (equal) and != (not equal) are supported. */
-    if (strcmp(op, "==") != 0 && strcmp(op, "!=") != 0) {
+    } else if (strcmp(op, "==") != 0 && strcmp(op, "!=") != 0) {
         printf(COLOR_RED "Error: unknown operator '%s' on line %d (expected '==' or '!=')" COLOR_RESET "\n", op, *line_num);
+        header_ok = 0;
     }
 
-    /* Strip surrounding quotes so string literals like "hello" compare as text. */
-    char *cmp = cmp_value;
-    int   cmp_len = (int)strlen(cmp);
-    if (cmp_len > 1 && cmp[0] == '"' && cmp[cmp_len - 1] == '"') {
-        cmp[cmp_len - 1] = '\0';
-        cmp++;
+    Variable *var = header_ok ? find_variable(var_name) : NULL;
+    if (header_ok && !var) {
+        printf(COLOR_RED "Error: variable '%s' not found (line %d)" COLOR_RESET "\n", var_name, *line_num);
+        header_ok = 0;
     }
 
-    /* str variables compare as text; int and sml variables compare numerically. */
-    int values_equal;
-    if (var->type == TYPE_STR) {
-        values_equal = (strcmp(var->value.strValue, cmp) == 0);
-    } else {
-        values_equal = (var->value.intValue == atoi(cmp));
-    }
-
-    /* Evaluate the condition. An unknown operator was reported above and is false. */
+    /* Evaluate the condition: str variables compare as text, int and sml
+       variables compare numerically. run_body stays 0 for a bad header so
+       neither branch runs even though the else branch would otherwise match. */
     int condition_is_true = 0;
-    if (strcmp(op, "==") == 0) {
-        condition_is_true = values_equal;
-    } else if (strcmp(op, "!=") == 0) {
-        condition_is_true = !values_equal;
+    int run_body          = header_ok;
+
+    if (header_ok) {
+        /* Strip surrounding quotes so string literals like "hello" compare as text. */
+        char *cmp = cmp_value;
+        int   cmp_len = (int)strlen(cmp);
+        if (cmp_len > 1 && cmp[0] == '"' && cmp[cmp_len - 1] == '"') {
+            cmp[cmp_len - 1] = '\0';
+            cmp++;
+        }
+
+        int values_equal;
+        if (var->type == TYPE_STR) {
+            values_equal = (strcmp(var->value.strValue, cmp) == 0);
+        } else {
+            values_equal = (var->value.intValue == atoi(cmp));
+        }
+
+        if (strcmp(op, "==") == 0) {
+            condition_is_true = values_equal;
+        } else if (strcmp(op, "!=") == 0) {
+            condition_is_true = !values_equal;
+        }
     }
 
     int in_else_branch = 0; /* becomes 1 after we see the "else" keyword */
@@ -348,8 +362,9 @@ void process_if_block(FILE *file, char *condition_line, int *line_num) {
         /* Run this line only if we're in the matching branch:
              - true branch  → condition passed and we haven't hit else yet
              - false branch → condition failed and we're past else          */
-        int should_run = (condition_is_true && !in_else_branch)
-                      || (!condition_is_true && in_else_branch);
+        int should_run = run_body
+                      && ((condition_is_true && !in_else_branch)
+                       || (!condition_is_true && in_else_branch));
 
         if (should_run) {
             run_command(trimmed, *line_num);
