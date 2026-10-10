@@ -1,0 +1,23 @@
+int cool = 4;
+
+if cool == 4
+    out "yay";
+else
+    out "no";
+end
+
+in int ifnottest "Input an integar: ";
+
+if ifnottest != 73
+    out "makes sense";
+else
+    out "wowie!! you put in 73!!";
+end
+
+str fancystr = "this is a str";
+
+if fancystr == "this is a str";
+    out "it is indeed a str";
+else
+    out "awh man"
+end

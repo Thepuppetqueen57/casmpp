@@ -10,14 +10,6 @@ out message;
 out num;
 out flag;
 
-int cool = 4;
-
-if cool == 4
-    out "yay";
-else
-    out "no";
-end
-
 in str input "Input a string: ";
 in int intinput "Input an integar: ";
 in sml smlinput "Input a small integar (1 or 0): ";
@@ -25,19 +17,3 @@ in sml smlinput "Input a small integar (1 or 0): ";
 out input;
 out intinput;
 out smlinput;
-
-in int ifnottest "Input another integar: ";
-
-if ifnottest != 73
-    out "makes sense";
-else
-    out "wowie!! you put in 73!!";
-end
-
-str fancystr = "this is a str";
-
-if fancystr == "this is a str";
-    out "it is indeed a str";
-else
-    out "awh man"
-end
