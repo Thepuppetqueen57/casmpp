@@ -251,95 +251,278 @@ void run_command(char *line, int line_num) {
 }
 
 /* ─────────────────────────────────────────────
-   IF / ELSE / END BLOCK
+   IF / ELIF / ELSE / END BLOCK
    ───────────────────────────────────────────── */
+
+/* One side of a comparison. A side is either a whole number or a piece of
+   text; which one it is decides how the two sides are compared. */
+typedef struct {
+    int  is_text;
+    int  int_value;
+    char text[MAX_STR_LEN];
+} Operand;
+
+/* Is this token a bare integer literal such as 42 or -7? */
+int is_integer_literal(const char *token) {
+    if (*token == '\0') return 0;
+    char *endptr;
+    strtol(token, &endptr, 10);
+    return *endptr == '\0';
+}
+
+/* Read one side of a comparison, advancing *cursor past it.
+   A quoted value is a text literal, anything else is a number or a variable
+   name. is_literal_text is set to 1 for a quoted value. Returns 1 on success,
+   or 0 after reporting an error. */
+int read_operand(char **cursor, char *out, int *is_literal_text, int line_num) {
+    char *p = *cursor;
+    while (*p == ' ' || *p == '\t') p++;
+
+    *is_literal_text = 0;
+    out[0] = '\0';
+
+    /* A quoted value: keep everything between the quotes, spaces included. */
+    if (*p == '"') {
+        p++;
+        int i = 0;
+        while (*p != '\0' && *p != '"') {
+            if (i < MAX_STR_LEN - 1) out[i++] = *p;
+            p++;
+        }
+        if (*p != '"') {
+            printf(COLOR_RED "Syntax error: unterminated string in condition on line %d" COLOR_RESET "\n", line_num);
+            return 0;
+        }
+        out[i] = '\0';
+        *is_literal_text = 1;
+        *cursor = p + 1;
+        return 1;
+    }
+
+    /* A bare value: stops at whitespace, at the comparison operator, or at a
+       trailing colon, so "x==5" parses the same as "x == 5" and the Python
+       style "if x == 5:" keeps the colon out of the value. */
+    int i = 0;
+    while (*p != '\0' && *p != ' ' && *p != '\t' && strchr("=!<>:", *p) == NULL) {
+        if (i < MAX_STR_LEN - 1) out[i++] = *p;
+        p++;
+    }
+    out[i] = '\0';
+
+    if (i == 0) {
+        printf(COLOR_RED "Syntax error: condition expects: <value> <operator> <value> on line %d (operators: ==, !=, >, <, >=, <=)" COLOR_RESET "\n", line_num);
+        return 0;
+    }
+
+    *cursor = p;
+    return 1;
+}
+
+/* Read the comparison operator at *cursor, advancing past it.
+   Supported: ==, !=, >, <, >=, <=. Returns 1 on success, or 0 after reporting
+   an error describing whatever the user actually typed. */
+int read_operator(char **cursor, char *out, int line_num) {
+    char *p = *cursor;
+    while (*p == ' ' || *p == '\t') p++;
+
+    const char *found = NULL;
+    if      (p[0] == '=' && p[1] == '=') found = "==";
+    else if (p[0] == '!' && p[1] == '=') found = "!=";
+    else if (p[0] == '>' && p[1] == '=') found = ">=";
+    else if (p[0] == '<' && p[1] == '=') found = "<=";
+    else if (p[0] == '>')                found = ">";
+    else if (p[0] == '<')                found = "<";
+
+    /* Nothing at all here means the operator is missing. */
+    if (*p == '\0') {
+        printf(COLOR_RED "Syntax error: condition expects: <value> <operator> <value> on line %d (operators: ==, !=, >, <, >=, <=)" COLOR_RESET "\n", line_num);
+        return 0;
+    }
+
+    /* What the user actually wrote, for the error message: the whole run of
+       operator characters — so "<>" and "===" are reported in one piece — or,
+       when there is none, the next word. */
+    char shown[16];
+    int  shown_len = 0;
+    while (p[shown_len] != '\0' && strchr("=!<>", p[shown_len]) != NULL && shown_len < 15) {
+        shown[shown_len] = p[shown_len];
+        shown_len++;
+    }
+    if (shown_len == 0) {
+        while (p[shown_len] != '\0' && p[shown_len] != ' ' && p[shown_len] != '\t' && shown_len < 15) {
+            shown[shown_len] = p[shown_len];
+            shown_len++;
+        }
+    }
+    shown[shown_len] = '\0';
+
+    /* A valid operator must cover every one of those characters. */
+    if (!found || (int)strlen(found) != shown_len) {
+        printf(COLOR_RED "Error: unknown operator '%s' on line %d (expected ==, !=, >, <, >= or <=)" COLOR_RESET "\n", shown, line_num);
+        return 0;
+    }
+
+    strcpy(out, found);
+    *cursor = p + strlen(found);
+    return 1;
+}
+
+/* Turn one side of a comparison into an Operand.
+     "text"        → the text itself (when is_literal_text is 1)
+     42            → the number 42
+     somevar       → that variable's current value
+   Returns 1 on success, or 0 after reporting an error. */
+int resolve_operand(const char *token, int is_literal_text, int line_num, Operand *out) {
+    out->int_value = 0;
+    out->text[0]   = '\0';
+
+    if (is_literal_text) {
+        out->is_text = 1;
+        snprintf(out->text, sizeof(out->text), "%s", token);
+        return 1;
+    }
+
+    if (is_integer_literal(token)) {
+        out->is_text   = 0;
+        out->int_value = atoi(token);
+        return 1;
+    }
+
+    Variable *var = find_variable(token);
+    if (!var) {
+        printf(COLOR_RED "Error: variable '%s' not found (line %d)" COLOR_RESET "\n", token, line_num);
+        return 0;
+    }
+
+    if (var->type == TYPE_STR) {
+        out->is_text = 1;
+        snprintf(out->text, sizeof(out->text), "%s", var->value.strValue);
+    } else if (var->type == TYPE_SML) {
+        out->is_text   = 0;
+        out->int_value = var->value.smlValue;
+    } else {
+        out->is_text   = 0;
+        out->int_value = var->value.intValue;
+    }
+    return 1;
+}
+
+/* Compare two operands, returning a negative number, 0, or a positive number.
+   Two numbers compare numerically; if either side is text both sides are
+   compared as text, so 5 and "5" count as equal. */
+int compare_operands(const Operand *a, const Operand *b) {
+    if (!a->is_text && !b->is_text) {
+        return (a->int_value > b->int_value) - (a->int_value < b->int_value);
+    }
+
+    char a_text[MAX_STR_LEN];
+    char b_text[MAX_STR_LEN];
+    if (a->is_text) snprintf(a_text, sizeof(a_text), "%s", a->text);
+    else            snprintf(a_text, sizeof(a_text), "%d", a->int_value);
+    if (b->is_text) snprintf(b_text, sizeof(b_text), "%s", b->text);
+    else            snprintf(b_text, sizeof(b_text), "%d", b->int_value);
+
+    return strcmp(a_text, b_text);
+}
+
+/* Evaluate a branch header — "if <value> <operator> <value>" or the same with
+   "elif" — and store its truth value in *out_truth. Either side may be a
+   variable, a number or a quoted string, so all of these work:
+       if x == 5        if x != y        if 5 > 3        if name == "bob"
+   Returns 1 when the header is valid, or 0 after reporting an error. */
+int evaluate_condition(const char *header, int line_num, int *out_truth) {
+    char buf[MAX_STR_LEN];
+    snprintf(buf, sizeof(buf), "%s", header);
+
+    /* Skip the "if" / "elif" keyword. */
+    char *p = buf;
+    while (*p != '\0' && *p != ' ' && *p != '\t') p++;
+
+    char lhs_token[MAX_STR_LEN];
+    char rhs_token[MAX_STR_LEN];
+    char op[16];
+    int  lhs_is_text, rhs_is_text;
+
+    if (!read_operand(&p, lhs_token, &lhs_is_text, line_num)) return 0;
+    if (!read_operator(&p, op, line_num))                     return 0;
+    if (!read_operand(&p, rhs_token, &rhs_is_text, line_num)) return 0;
+
+    /* Only an optional trailing colon may follow the right-hand side, so the
+       Python style "if x == 5:" is accepted as well as "if x == 5". */
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p == ':') {
+        p++;
+        while (*p == ' ' || *p == '\t') p++;
+    }
+    if (*p != '\0') {
+        printf(COLOR_RED "Syntax error: unexpected text '%s' after condition on line %d" COLOR_RESET "\n", p, line_num);
+        return 0;
+    }
+
+    Operand lhs;
+    Operand rhs;
+    if (!resolve_operand(lhs_token, lhs_is_text, line_num, &lhs)) return 0;
+    if (!resolve_operand(rhs_token, rhs_is_text, line_num, &rhs)) return 0;
+
+    int cmp = compare_operands(&lhs, &rhs);
+
+    if      (strcmp(op, "==") == 0) *out_truth = (cmp == 0);
+    else if (strcmp(op, "!=") == 0) *out_truth = (cmp != 0);
+    else if (strcmp(op, ">")  == 0) *out_truth = (cmp > 0);
+    else if (strcmp(op, "<")  == 0) *out_truth = (cmp < 0);
+    else if (strcmp(op, ">=") == 0) *out_truth = (cmp >= 0);
+    else                            *out_truth = (cmp <= 0); /* <= */
+
+    return 1;
+}
+
+/* Does this line consist of the given keyword, optionally followed by a colon?
+   This lets the Python style "else:" work alongside plain "else". */
+int is_keyword_line(const char *line, const char *keyword) {
+    size_t len = strlen(keyword);
+    if (strncmp(line, keyword, len) != 0) return 0;
+    if (line[len] == '\0')             return 1;
+    return line[len] == ':' && line[len + 1] == '\0';
+}
 
 /* Process an if-block read from the file.
    Format in script:
-       if <varname> == <value>
-           ...true branch commands...
+       if <value> <operator> <value>
+           ...commands to run when this condition is true...
+       elif <value> <operator> <value>
+           ...commands to run when nothing before this matched...
        else
-           ...false branch commands...
+           ...commands to run when no condition matched...
        end
 
-   Supported operators: == (equal) and != (not equal).
+   Any number of "elif" branches may sit between the "if" and the "else".
+   Supported operators: ==, !=, >, <, >= and <=. Both sides of a comparison may
+   be a variable, a number, or a quoted string.
    line_num is updated as new lines are read so error messages stay accurate.
 
-   If the header is invalid (bad syntax, unknown variable, unknown operator) the
-   error is reported once and neither branch runs — but the block is still
-   consumed up to its "end" so the body is never executed as top-level commands. */
+   If a branch header is invalid (bad syntax, unknown variable, unknown
+   operator) the error is reported once and no branch of the chain runs — but
+   the block is still consumed up to its "end" so the body is never executed as
+   top-level commands. */
 void process_if_block(FILE *file, char *condition_line, int *line_num) {
-    /* Parse:  if  <varname>  <op>  <value> */
-    char *saveptr = NULL;
-    strtok_r(condition_line, " ", &saveptr);         /* discard "if" keyword */
-    char *var_name  = strtok_r(NULL, " ", &saveptr); /* variable to test     */
-    char *op        = strtok_r(NULL, " ", &saveptr); /* operator: == or !=   */
+    /* Chain state:
+         chain_taken  — a branch has already matched, so later ones must not run
+         chain_broken — a header was invalid, so no branch runs at all
+         run_branch   — should the body lines we are reading run right now?  */
+    int chain_taken  = 0;
+    int chain_broken = 0;
+    int run_branch   = 0;
 
-    /* The compared value is the whole remaining text on the line, not just the
-       next token: taking one token would cut a quoted string at its first
-       space, so "this is a str" would compare as "this. */
-    char *cmp_value = saveptr;
-    if (cmp_value) {
-        while (*cmp_value == ' ' || *cmp_value == '\t') {
-            cmp_value++;
-        }
-        if (*cmp_value == '\0') {
-            cmp_value = NULL;
-        }
+    /* Evaluate the "if" header that brought us here. */
+    int truth = 0;
+    if (evaluate_condition(condition_line, *line_num, &truth)) {
+        run_branch = truth;
+        if (run_branch) chain_taken = 1;
+    } else {
+        chain_broken = 1;
     }
 
-    /* Validate the header first. We only report an error here and keep going:
-       the block below must still be read, otherwise its body lines would be
-       executed at the top level and its "else"/"end" reported as unknown. */
-    int header_ok = 1;
-
-    if (!var_name || !op || !cmp_value) {
-        printf(COLOR_RED "Syntax error: 'if' expects: if <var> <op> <value> (operators: ==, !=)" COLOR_RESET "\n");
-        header_ok = 0;
-
-    /* Only == (equal) and != (not equal) are supported. */
-    } else if (strcmp(op, "==") != 0 && strcmp(op, "!=") != 0) {
-        printf(COLOR_RED "Error: unknown operator '%s' on line %d (expected '==' or '!=')" COLOR_RESET "\n", op, *line_num);
-        header_ok = 0;
-    }
-
-    Variable *var = header_ok ? find_variable(var_name) : NULL;
-    if (header_ok && !var) {
-        printf(COLOR_RED "Error: variable '%s' not found (line %d)" COLOR_RESET "\n", var_name, *line_num);
-        header_ok = 0;
-    }
-
-    /* Evaluate the condition: str variables compare as text, int and sml
-       variables compare numerically. run_body stays 0 for a bad header so
-       neither branch runs even though the else branch would otherwise match. */
-    int condition_is_true = 0;
-    int run_body          = header_ok;
-
-    if (header_ok) {
-        /* Strip surrounding quotes so string literals like "hello" compare as text. */
-        char *cmp = cmp_value;
-        int   cmp_len = (int)strlen(cmp);
-        if (cmp_len > 1 && cmp[0] == '"' && cmp[cmp_len - 1] == '"') {
-            cmp[cmp_len - 1] = '\0';
-            cmp++;
-        }
-
-        int values_equal;
-        if (var->type == TYPE_STR) {
-            values_equal = (strcmp(var->value.strValue, cmp) == 0);
-        } else {
-            values_equal = (var->value.intValue == atoi(cmp));
-        }
-
-        if (strcmp(op, "==") == 0) {
-            condition_is_true = values_equal;
-        } else if (strcmp(op, "!=") == 0) {
-            condition_is_true = !values_equal;
-        }
-    }
-
-    int in_else_branch = 0; /* becomes 1 after we see the "else" keyword */
-    int found_end      = 0;
+    int  found_end = 0;
     char line[MAX_STR_LEN];
 
     /* Read lines until we hit "end" (or run out of file). */
@@ -353,20 +536,30 @@ void process_if_block(FILE *file, char *condition_line, int *line_num) {
             break;
         }
 
-        if (strcmp(trimmed, "else") == 0) {
-            in_else_branch = 1;
+        /* "else" runs only when nothing before it matched. */
+        if (is_keyword_line(trimmed, "else")) {
+            run_branch = !chain_broken && !chain_taken;
+            if (run_branch) chain_taken = 1;
             free(trimmed);
             continue;
         }
 
-        /* Run this line only if we're in the matching branch:
-             - true branch  → condition passed and we haven't hit else yet
-             - false branch → condition failed and we're past else          */
-        int should_run = run_body
-                      && ((condition_is_true && !in_else_branch)
-                       || (!condition_is_true && in_else_branch));
+        /* "elif" starts another condition in the same chain. */
+        if (strncmp(trimmed, "elif", 4) == 0 &&
+            (trimmed[4] == ' ' || trimmed[4] == '\t' || trimmed[4] == ':' || trimmed[4] == '\0')) {
+            int elif_truth = 0;
+            if (evaluate_condition(trimmed, *line_num, &elif_truth)) {
+                run_branch = !chain_broken && !chain_taken && elif_truth;
+                if (run_branch) chain_taken = 1;
+            } else {
+                chain_broken = 1;
+                run_branch   = 0;
+            }
+            free(trimmed);
+            continue;
+        }
 
-        if (should_run) {
+        if (run_branch) {
             run_command(trimmed, *line_num);
         }
 
@@ -426,9 +619,10 @@ void interpret_file(const char *filename) {
             }
 
         /* ── If statement ─────────────────────────────────────────────
-           Hands control over to process_if_block() which reads lines
-           from the file until it finds the matching "end".            */
-        } else if (strncmp(trimmed, "if ", 3) == 0) {
+           Hands control over to process_if_block(), which reads lines from
+           the file until it finds the matching "end" — taking in any elif
+           and else branches along the way.                            */
+        } else if (is_keyword_line(trimmed, "if") || strncmp(trimmed, "if ", 3) == 0) {
             process_if_block(file, trimmed, &line_num);
 
         /* ── Everything else is treated as a command (out, in, …) ─── */

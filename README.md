@@ -44,7 +44,47 @@ else
 end
 ```
 
-Supported operators: == !=
+Supported operators: == != > < >= <=
+
+You can add as many elif branches as you want between the if and the else. They get checked in order and only the first one that matches runs:
+
+```
+int cooler = 7;
+
+if cooler == 5
+    out "Nice!";
+elif cooler == 7
+    out "Lucky number!";
+elif cooler > 10
+    out "Thats a big number!";
+else
+    out "Nope.";
+end
+```
+
+The colon at the end of a condition is optional, so `if cooler == 5:` and `else:` work too if you are used to python.
+
+Both sides of a comparison can be a variable, a number, or a string in quotes:
+
+```
+int a = 5;
+int b = 5;
+str name = "bob";
+
+if a == b
+    out "Same!";
+end
+
+if name != "alice"
+    out "Not alice!";
+end
+
+if 5 > 3
+    out "Math works!";
+end
+```
+
+One thing to watch out for: a word that isnt in quotes and isnt a number counts as a variable name, so `if name == bob` looks for a variable called bob. Write `if name == "bob"` to compare against the text bob.
 
 ## Comments
 To add a comment you need to put a hashtag at the beginning of the line. Like this:

@@ -16,7 +16,7 @@ end
 
 str fancystr = "this is a str";
 
-if fancystr == "this is a str";
+if fancystr == "this is a str"
     out "it is indeed a str";
 else
     out "awh man"
