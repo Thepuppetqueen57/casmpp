@@ -28,7 +28,8 @@ OUTDIR = out
 TARGET = $(OUTDIR)/casmpp$(EXEEXT)
 
 # Source files
-SRC = src/main.c
+SRC = $(wildcard src/*.c)
+HDR = $(wildcard src/*.h)
 
 .PHONY: all clean
 
@@ -36,10 +37,10 @@ SRC = src/main.c
 all: $(TARGET)
 
 # Build target
-$(TARGET): $(SRC)
+$(TARGET): $(SRC) $(HDR)
 	@echo Compiling...
 	@$(MKDIR) $(OUTDIR)
-	$(CC) -o $@ $<
+	$(CC) -o $@ $(SRC)
 	@echo Compiled!
 
 # Clean target
