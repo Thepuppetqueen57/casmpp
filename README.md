@@ -9,6 +9,8 @@ This is because back when I made CASM I vibecoded everything for some reason
 
 And now I just wanna see how far I can get with ai nowadays since its improved so much
 
+If you want to check out something similar that is fully written by humans check out [RASM](https://github.com/Thepuppetqueen57/rasm)
+
 # Compile Guide
 Just install clang and gnu-make and then run the makefile
 
