@@ -94,14 +94,18 @@ void process_if_block(FILE *file, char *condition_line, int *line_num) {
    MAIN INTERPRETER LOOP
    ───────────────────────────────────────────── */
 
-/* Open a .casm++ file and execute it line by line. */
-void interpret_file(const char *filename) {
-    FILE *file = fopen(filename, "r");
-    if (!file) {
-        printf(COLOR_RED "Error: could not open file '%s'" COLOR_RESET "\n", filename);
-        return;
-    }
+/* Directory of the file being interpreted right now, including its trailing
+   separator ("" when the file was named without a directory). The "run"
+   command resolves the paths it is given against this, so a script runs the
+   files sitting next to it no matter where casmpp was started from. */
+static char current_dir[MAX_STR_LEN] = "";
 
+/* How many files are being executed right now, so a script that runs itself —
+   directly or through another file — is reported instead of crashing. */
+static int run_depth = 0;
+
+/* Execute an open script file, line by line. */
+static void interpret_stream(FILE *file) {
     char line[MAX_STR_LEN];
     int  line_num = 0;
 
@@ -151,6 +155,112 @@ void interpret_file(const char *filename) {
 
         free(trimmed);
     }
+}
+
+/* Execute an open script with filename's directory current, putting the
+   previous directory back afterwards. */
+static void run_stream(FILE *file, const char *filename) {
+    char saved_dir[MAX_STR_LEN];
+    snprintf(saved_dir, sizeof(saved_dir), "%s", current_dir);
+
+    path_directory(filename, current_dir, sizeof(current_dir));
+
+    interpret_stream(file);
+
+    snprintf(current_dir, sizeof(current_dir), "%s", saved_dir);
+}
+
+/* Open a .casm++ file and execute it line by line. */
+void interpret_file(const char *filename) {
+    FILE *file = fopen(filename, "r");
+    if (!file) {
+        printf(COLOR_RED "Error: could not open file '%s'" COLOR_RESET "\n", filename);
+        return;
+    }
+
+    run_stream(file, filename);
+    fclose(file);
+}
+
+/* ─────────────────────────────────────────────
+   RUNNING ANOTHER FILE (the "run" command)
+   ───────────────────────────────────────────── */
+
+/* Handle the "run" command, which executes another file in place of the run
+   line, so both files share one set of variables.
+   Format in script:
+       run "otherfile.casmpp";
+       run folder/otherotherfile.casm;
+
+   The path is looked up relative to the file the "run" is written in — not
+   relative to the directory casmpp was started from — and a .casm file runs
+   just like a .casmpp one. line_num points at the "run" line for errors. */
+void cmd_run(char *args, int line_num) {
+    char *trimmed = trim_whitespace(args);
+    char  path[MAX_STR_LEN];
+
+    /* A quoted path may contain spaces, and nothing may follow the closing
+       quote. Without quotes the rest of the line is taken as written. */
+    if (trimmed[0] == '"') {
+        char *closing = strchr(trimmed + 1, '"');
+        if (!closing) {
+            printf(COLOR_RED "Syntax error: unterminated file name in 'run' on line %d" COLOR_RESET "\n", line_num);
+            free(trimmed);
+            return;
+        }
+
+        *closing = '\0';
+        snprintf(path, sizeof(path), "%s", trimmed + 1);
+
+        char *trailing = trim_whitespace(closing + 1);
+        if (trailing[0] != '\0') {
+            printf(COLOR_RED "Syntax error: unexpected text '%s' after file name in 'run' on line %d" COLOR_RESET "\n", trailing, line_num);
+            free(trailing);
+            free(trimmed);
+            return;
+        }
+        free(trailing);
+    } else {
+        snprintf(path, sizeof(path), "%s", trimmed);
+    }
+
+    free(trimmed);
+
+    if (path[0] == '\0') {
+        printf(COLOR_RED "Syntax error: 'run' expects a file name on line %d (example: run \"otherfile.casmpp\")" COLOR_RESET "\n", line_num);
+        return;
+    }
+
+    /* Only scripts can be run. */
+    const char *extension = strrchr(path, '.');
+    if (!extension || (strcmp(extension, ".casmpp") != 0 && strcmp(extension, ".casm") != 0)) {
+        printf(COLOR_RED "Error: '%s' is not a valid file extension for 'run' on line %d (expected .casmpp or .casm)" COLOR_RESET "\n", path, line_num);
+        return;
+    }
+
+    if (run_depth >= MAX_RUN_DEPTH) {
+        printf(COLOR_RED "Error: 'run' files are nested too deeply (limit is %d) on line %d" COLOR_RESET "\n", MAX_RUN_DEPTH, line_num);
+        return;
+    }
+
+    /* Resolve the path against the directory of the file we are running. */
+    char full_path[MAX_STR_LEN * 2];
+    join_path(current_dir, path, full_path, sizeof(full_path));
+
+    FILE *file = fopen(full_path, "r");
+    if (!file) {
+        printf(COLOR_RED "Error: could not open file '%s' on line %d" COLOR_RESET "\n", full_path, line_num);
+        return;
+    }
+
+    if (strcmp(extension, ".casm") == 0) {
+        printf(COLOR_YELLOW "Warning: Running a .casm file" COLOR_RESET "\n");
+        printf(COLOR_YELLOW ".casm files are deprecated, please use .casmpp instead." COLOR_RESET "\n");
+    }
+
+    run_depth++;
+    run_stream(file, full_path);
+    run_depth--;
 
     fclose(file);
 }

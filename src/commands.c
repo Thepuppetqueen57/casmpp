@@ -107,6 +107,10 @@ void run_command(char *line, int line_num) {
         /* Everything after "in " is the argument (type, name, prompt). */
         cmd_input(line + strlen(command) + 1);
 
+    } else if (strcmp(command, "run") == 0) {
+        /* Everything after "run " is the file to execute. */
+        cmd_run(line + strlen(command) + 1, line_num);
+
     } else {
         printf(COLOR_RED "Error: unknown command '%s' on line %d" COLOR_RESET "\n", command, line_num);
     }

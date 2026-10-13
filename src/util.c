@@ -44,3 +44,46 @@ char *trim_whitespace(const char *str) {
     free(copy);
     return trimmed;
 }
+
+/* ─────────────────────────────────────────────
+   PATH UTILITY
+   ───────────────────────────────────────────── */
+
+/* Copy the directory part of a path into out, keeping the trailing separator
+   ("" when the path has no directory at all). Both / and \ count as separators,
+   so Windows paths and MSYS/Git Bash paths behave the same. */
+void path_directory(const char *path, char *out, size_t out_size) {
+    int last_separator = -1;
+
+    for (int i = 0; path[i] != '\0'; i++) {
+        if (path[i] == '/' || path[i] == '\\') last_separator = i;
+    }
+
+    if (last_separator < 0) {
+        out[0] = '\0';
+        return;
+    }
+
+    size_t length = (size_t)last_separator + 1;
+    if (length >= out_size) length = out_size - 1;
+
+    memcpy(out, path, length);
+    out[length] = '\0';
+}
+
+/* Join a directory and a relative path into out.
+   An empty directory leaves the path untouched, and a separator is only added
+   when the directory does not already end with one. */
+void join_path(const char *dir, const char *relative, char *out, size_t out_size) {
+    if (dir[0] == '\0') {
+        snprintf(out, out_size, "%s", relative);
+        return;
+    }
+
+    size_t length = strlen(dir);
+    if (dir[length - 1] == '/' || dir[length - 1] == '\\') {
+        snprintf(out, out_size, "%s%s", dir, relative);
+    } else {
+        snprintf(out, out_size, "%s/%s", dir, relative);
+    }
+}

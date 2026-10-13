@@ -24,6 +24,7 @@
 #define MAX_VARIABLES 100   /* Maximum number of variables a script can declare */
 #define MAX_NAME_LEN  50    /* Maximum length of a variable name */
 #define MAX_STR_LEN   256   /* Maximum length of a string variable's value */
+#define MAX_RUN_DEPTH 32    /* How many 'run' files may be open at the same time */
 
 /* ─────────────────────────────────────────────
    TYPES
@@ -73,6 +74,8 @@ void      add_variable(const char *name, VarType type, const char *value);
    ───────────────────────────────────────────── */
 
 char *trim_whitespace(const char *str);
+void  path_directory(const char *path, char *out, size_t out_size);
+void  join_path(const char *dir, const char *relative, char *out, size_t out_size);
 
 /* ─────────────────────────────────────────────
    BUILT-IN COMMANDS (commands.c)
@@ -100,5 +103,6 @@ int is_keyword_line(const char *line, const char *keyword);
 
 void process_if_block(FILE *file, char *condition_line, int *line_num);
 void interpret_file(const char *filename);
+void cmd_run(char *args, int line_num); /* runs another script in place of the run line */
 
 #endif

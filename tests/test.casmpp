@@ -17,3 +17,5 @@ in sml smlinput "Input a small integar (1 or 0): ";
 out input;
 out intinput;
 out smlinput;
+
+# run "ifstatements.casmpp";

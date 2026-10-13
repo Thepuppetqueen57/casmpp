@@ -88,6 +88,26 @@ end
 
 One thing to watch out for: a word that isnt in quotes and isnt a number counts as a variable name, so `if name == bob` looks for a variable called bob. Write `if name == "bob"` to compare against the text bob.
 
+## Run
+The run keyword executes another file right where the run line sits, so both files share one set of variables. The path is looked for relative to the file the run is written in — not relative to the folder casmpp was started from — so a script can run the files sitting next to it:
+
+```
+run "otherfile.casmpp";
+run "folder/otherotherfile.casm";
+
+out "files ran";
+```
+
+In that example, if the code above sits in example/path.casmpp, then it runs example/otherfile.casmpp and example/folder/otherotherfile.casm. .casm files run exactly like .casmpp ones, just with the usual deprecation warning.
+
+The quotes are optional for a path without spaces:
+
+```
+run otherfile.casmpp;
+```
+
+Files can run other files, and a file that ends up running itself is stopped with an error after 32 files instead of hanging.
+
 ## Comments
 To add a comment you need to put a hashtag at the beginning of the line. Like this:
 
