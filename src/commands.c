@@ -92,26 +92,39 @@ void cmd_output(char *args, int line_num) {
    COMMAND DISPATCHER
    ───────────────────────────────────────────── */
 
-/* Parse the first word of a line to decide which command to run. */
-void run_command(char *line, int line_num) {
-    /* strtok modifies the string, so grab the command word first. */
-    char *command = strtok(line, " ");
-    if (command == NULL) return;
+/* Parse the first word of a line to decide which command to run.
+   The line comes from the loaded script, which runs again on every pass of a
+   loop, so it is copied before any command gets a chance to modify it. */
+void run_command(const char *line, int line_num) {
+    char *copy = strdup(line);
+    if (!copy) {
+        fprintf(stderr, COLOR_RED "run_command: strdup failed: %s" COLOR_RESET "\n", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    /* Everything after the first space is the argument; the command word is
+       what comes before it. */
+    char *space   = strchr(copy, ' ');
+    char *args    = space ? space + 1 : copy + strlen(copy);
+    char *command = strtok(copy, " ");
+
+    if (command == NULL) {
+        free(copy);
+        return;
+    }
 
     if (strcmp(command, "out") == 0) {
-        /* Everything after "out " is the argument. */
-        char *args = line + strlen(command) + 1;
         cmd_output(args, line_num);
 
     } else if (strcmp(command, "in") == 0) {
-        /* Everything after "in " is the argument (type, name, prompt). */
-        cmd_input(line + strlen(command) + 1);
+        cmd_input(args);
 
     } else if (strcmp(command, "run") == 0) {
-        /* Everything after "run " is the file to execute. */
-        cmd_run(line + strlen(command) + 1, line_num);
+        cmd_run(args, line_num);
 
     } else {
         printf(COLOR_RED "Error: unknown command '%s' on line %d" COLOR_RESET "\n", command, line_num);
     }
+
+    free(copy);
 }

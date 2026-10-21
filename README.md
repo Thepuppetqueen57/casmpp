@@ -108,6 +108,133 @@ run otherfile.casmpp;
 
 Files can run other files, and a file that ends up running itself is stopped with an error after 32 files instead of hanging.
 
+## Redefining Variables
+Declaring a variable again gives it a new value instead of making a second variable:
+
+```
+int score = 0;
+out score;
+
+int score = 10;
+out score;
+```
+
+That prints 0 and then 10. A redefinition can even change the type, and then the old value is gone:
+
+```
+int thing = 5;
+str thing = "now text";
+```
+
+For math there are += -= *= and /=. They work on int variables that already exist, and they can take a number or another variable on the right:
+
+```
+int score = 10;
+int score += 5;
+out score;
+
+int bonus = 2;
+int score += bonus;
+```
+
+A few things are errors on purpose, because before they would quietly turn into 0:
+
+```
+# error, write int score += 1 instead
+int score = score + 1;
+
+# error, points was never declared
+int points += 1;
+
+str name = "bob";
+# error, math is for ints
+int name += 1;
+```
+
+## While
+A while loop runs its body again and again for as long as its condition is true. The condition is exactly the same as an if condition, so any operator works and either side can be a variable, a number or a string:
+
+```
+int var = 0;
+
+while var < 500
+    out "loop!";
+
+    int var += 1;
+end
+```
+
+A condition that is never true just skips the body:
+
+```
+while 0 == 1
+    out "never";
+end
+```
+
+There is no limit on how many times a loop runs, so `while 1 == 1` really does run forever. Ctrl-C stops it.
+
+## For
+A for loop counts a variable through a range. The end of the range is not included, so `for i = 0-5` runs 5 times with i being 0, 1, 2, 3 and 4:
+
+```
+for i = 0-5
+    out "this will print 5 times!"
+end
+```
+
+Both ends can be a number or a variable:
+
+```
+int last = 3;
+
+for i = 0-last
+    out i;
+end
+```
+
+After the loop i is left on the end value (5 above), the same way a counting loop in C is. If the start is bigger than the end the body never runs.
+
+## Break
+break stops the loop it is written in and carries on with the line after the loop's end:
+
+```
+int var = 0;
+
+while var < 500
+    out var;
+
+    if var == 3
+        break
+    end
+
+    int var += 1;
+end
+
+out "the loop stopped early";
+```
+
+With loops inside loops break only stops the one it is written in. Using break where there is no loop is an error.
+
+## Nesting
+if, while and for blocks can go inside each other in any combination, as deep as 64 levels:
+
+```
+for i = 0-3
+    out "table";
+
+    for j = 0-3
+        if j == 2
+            break
+        end
+
+        out j;
+    end
+end
+```
+
+Every block still ends with its own end, and an elif or else belongs to the closest if above it.
+
 ## Comments
 To add a comment you need to put a hashtag at the beginning of the line. Like this:
 

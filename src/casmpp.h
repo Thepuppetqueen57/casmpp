@@ -25,6 +25,7 @@
 #define MAX_NAME_LEN  50    /* Maximum length of a variable name */
 #define MAX_STR_LEN   256   /* Maximum length of a string variable's value */
 #define MAX_RUN_DEPTH 32    /* How many 'run' files may be open at the same time */
+#define MAX_BLOCK_DEPTH 64  /* How deeply if/while/for blocks may nest */
 
 /* ─────────────────────────────────────────────
    TYPES
@@ -59,6 +60,31 @@ typedef struct {
     char text[MAX_STR_LEN];
 } Operand;
 
+/* How a block finished. A loop body that runs "break" reports FLOW_BREAK so
+   the enclosing loop stops; every other path reports FLOW_NORMAL. */
+typedef enum {
+    FLOW_NORMAL,
+    FLOW_BREAK
+} Flow;
+
+/* One executable line of a script: its text (trimmed, without a trailing
+   semicolon), the line number it came from, and — once worked out — the index
+   of the "end" that closes it, when the line opens a block. */
+typedef struct {
+    char *text;
+    int   line_num;
+    int   match;      /* 0 = not worked out yet, -1 = no matching "end" */
+} ScriptLine;
+
+/* A whole script held in memory, so blocks and loops can jump around freely
+   instead of being read from a file one line at a time. */
+typedef struct {
+    ScriptLine *lines;
+    int         count;         /* executable lines (blank and # lines dropped) */
+    int         capacity;
+    int         last_line_num; /* lines read from the file, for error messages */
+} Script;
+
 /* ─────────────────────────────────────────────
    VARIABLE STORE (variables.c)
    ───────────────────────────────────────────── */
@@ -68,6 +94,8 @@ extern int      variable_count;           /* how many variables have been declar
 
 Variable *find_variable(const char *name);
 void      add_variable(const char *name, VarType type, const char *value);
+int       set_variable_literal(Variable *var, VarType type, const char *value, int line_num);
+int       set_variable_math(Variable *var, const char *op, const char *rhs, int line_num);
 
 /* ─────────────────────────────────────────────
    STRING UTILITY (util.c)
@@ -83,7 +111,7 @@ void  join_path(const char *dir, const char *relative, char *out, size_t out_siz
 
 void cmd_input(char *args);
 void cmd_output(char *args, int line_num);
-void run_command(char *line, int line_num);
+void run_command(const char *line, int line_num);
 
 /* ─────────────────────────────────────────────
    CONDITIONS (condition.c)
@@ -98,10 +126,32 @@ int evaluate_condition(const char *header, int line_num, int *out_truth);
 int is_keyword_line(const char *line, const char *keyword);
 
 /* ─────────────────────────────────────────────
+   SCRIPT STORAGE AND BLOCK HEADERS (script.c)
+   ───────────────────────────────────────────── */
+
+int  script_load(const char *filename, Script *script);
+int  script_find_end(Script *script, int opener);
+void script_free(Script *script);
+
+int is_if_header(const char *line);
+int is_elif_header(const char *line);
+int is_else_header(const char *line);
+int is_while_header(const char *line);
+int is_for_header(const char *line);
+int is_end_line(const char *line);
+int is_block_opener(const char *line);
+
+/* ─────────────────────────────────────────────
+   DECLARATIONS AND ASSIGNMENTS (declaration.c)
+   ───────────────────────────────────────────── */
+
+int is_declaration_line(const char *line);
+int exec_declaration(const char *line, int line_num);
+
+/* ─────────────────────────────────────────────
    IF BLOCKS AND INTERPRETER (interpreter.c)
    ───────────────────────────────────────────── */
 
-void process_if_block(FILE *file, char *condition_line, int *line_num);
 void interpret_file(const char *filename);
 void cmd_run(char *args, int line_num); /* runs another script in place of the run line */
 

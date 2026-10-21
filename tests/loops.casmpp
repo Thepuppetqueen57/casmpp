@@ -1,0 +1,7 @@
+int looper = 0;
+
+while looper < 5
+    out "yup";
+
+    int looper += 1;
+end
