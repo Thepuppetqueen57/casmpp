@@ -1,0 +1,84 @@
+# Functions: definitions, parameters, nesting and calls.
+# A call may come before the definition, because definitions are
+# collected when the file is loaded.
+
+greet("cool", 3);
+banner();
+count_up(3);
+stop_early(5);
+check("yes", 1);
+check("no", 0);
+countdown(3);
+
+int total = 0;
+bump_total(5);
+bump_total(2);
+out total;
+
+shadow();
+out total;
+
+fn greet(str who, int times)
+    for i = 0-times
+        out who;
+    end
+end
+
+fn banner()
+    out "== banner ==";
+end
+
+# Ifs and loops nest inside a function like anywhere else.
+fn count_up(int limit)
+    int n = 0;
+    while n < limit
+        if n == 1
+            out "one";
+        else
+            out n;
+        end
+        int n += 1;
+    end
+end
+
+# "break" stops the loop inside the function, and nothing else.
+fn stop_early(int limit)
+    for i = 0-limit
+        if i == 2
+            break
+        end
+        out i;
+    end
+end
+
+fn check(str word, sml flag)
+    if flag == 1
+        out word;
+    else
+        out "off";
+    end
+end
+
+# Math changes the top-level variable that already exists.
+fn bump_total(int amount)
+    int total += amount;
+end
+
+# "=" makes a local, so this does not touch the top-level total.
+fn shadow()
+    int total = 99;
+    out total;
+end
+
+# Recursion: the parameter belongs to the call, so each level keeps its own n.
+fn countdown(int n)
+    if n == 0
+        out "liftoff";
+    else
+        out n;
+        int next = 0;
+        int next += n;
+        int next -= 1;
+        countdown(next);
+    end
+end

@@ -19,6 +19,7 @@ static int run_depth = 0;
 static int block_depth = 0;
 
 static Flow exec_range(Script *script, int start, int end, int in_loop);
+static void exec_function_call(const char *line, int line_num);
 
 /* ─────────────────────────────────────────────
    BLOCK HELPERS
@@ -375,6 +376,115 @@ static Flow exec_for(Script *script, int opener, int *next) {
    LINE EXECUTION
    ───────────────────────────────────────────── */
 
+/* ─────────────────────────────────────────────
+   FUNCTION CALLS
+   ───────────────────────────────────────────── */
+
+/* Report why one argument does not fit its parameter. */
+static void argument_type_error(const char *function_name, int index, VarType type,
+                                const char *given, int line_num) {
+    if (type == TYPE_SML) {
+        printf(COLOR_RED "Error: argument %d of '%s' must be 0 or 1, got %s on line %d" COLOR_RESET "\n",
+               index, function_name, given, line_num);
+    } else {
+        printf(COLOR_RED "Error: argument %d of '%s' must be %s, got %s on line %d" COLOR_RESET "\n",
+               index, function_name, type == TYPE_INT ? "an int" : "a str", given, line_num);
+    }
+}
+
+/* Does one resolved argument fit the parameter it is bound to? */
+static int argument_fits(const Operand *value, VarType type) {
+    if (type == TYPE_STR) return value->is_text;
+
+    if (value->is_text) return 0;
+    if (type == TYPE_SML) return value->int_value == 0 || value->int_value == 1;
+    return 1;
+}
+
+/* Execute one call line — "name(argument, argument);".
+   Every argument is checked before the call's frame exists, so a bad call
+   changes nothing. The body then runs with its own variables, its own block
+   nesting budget and the directory of the file that defined it. */
+static void exec_function_call(const char *line, int line_num) {
+    char name[MAX_NAME_LEN];
+    char arguments[MAX_PARAMS][MAX_STR_LEN];
+    int  argument_count = 0;
+
+    if (!parse_function_call(line, name, arguments, &argument_count, line_num)) return;
+
+    Function *function = find_function(name);
+    if (!function) {
+        printf(COLOR_RED "Error: function '%s' not found on line %d" COLOR_RESET "\n", name, line_num);
+        return;
+    }
+
+    if (argument_count != function->param_count) {
+        printf(COLOR_RED "Error: function '%s' expects %d argument%s, got %d on line %d" COLOR_RESET "\n",
+               name, function->param_count, function->param_count == 1 ? "" : "s",
+               argument_count, line_num);
+        return;
+    }
+
+    Operand values[MAX_PARAMS];
+
+    for (int i = 0; i < argument_count; i++) {
+        char text[MAX_STR_LEN];
+        int  is_literal_text = 0;
+
+        if (arguments[i][0] == '"') {
+            size_t length = strlen(arguments[i]);
+            if (length < 2 || arguments[i][length - 1] != '"') {
+                printf(COLOR_RED "Syntax error: unterminated string in the call to '%s' on line %d" COLOR_RESET "\n",
+                       name, line_num);
+                return;
+            }
+            snprintf(text, sizeof(text), "%.*s", (int)(length - 2), arguments[i] + 1);
+            is_literal_text = 1;
+        } else {
+            snprintf(text, sizeof(text), "%s", arguments[i]);
+        }
+
+        if (!resolve_operand(text, is_literal_text, line_num, &values[i])) return;
+
+        if (!argument_fits(&values[i], function->params[i].type)) {
+            argument_type_error(name, i + 1, function->params[i].type, arguments[i], line_num);
+            return;
+        }
+    }
+
+    if (!frame_enter(line_num)) return;
+
+    for (int i = 0; i < argument_count; i++) {
+        char value[MAX_STR_LEN];
+
+        if (function->params[i].type == TYPE_STR) {
+            snprintf(value, sizeof(value), "%s", values[i].text);
+        } else {
+            snprintf(value, sizeof(value), "%d", values[i].int_value);
+        }
+
+        add_variable(function->params[i].name, function->params[i].type, value);
+    }
+
+    /* The body belongs to the file the function was written in, so "run" lines
+       inside it resolve against that file, not against the caller's. */
+    char saved_dir[MAX_STR_LEN];
+    snprintf(saved_dir, sizeof(saved_dir), "%s", current_dir);
+    snprintf(current_dir, sizeof(current_dir), "%s", function->dir);
+
+    /* A body gets its own nesting budget: how deep the caller was nested says
+       nothing about how deep this body may go. */
+    int saved_block_depth = block_depth;
+    block_depth = 0;
+
+    exec_range(function->script, function->body_start, function->body_end, 0);
+
+    block_depth = saved_block_depth;
+    snprintf(current_dir, sizeof(current_dir), "%s", saved_dir);
+
+    frame_leave();
+}
+
 /* Is this line just the word "break"? */
 static int is_break_line(const char *line) {
     return strcmp(line, "break") == 0;
@@ -417,6 +527,15 @@ static Flow exec_range(Script *script, int start, int end, int in_loop) {
         /* ── Break ────────────────────────────────────────────────────
            Inside a loop this stops the innermost one. Anywhere else it is a
            mistake worth saying out loud.                            */
+        /* ── Function definition ──────────────────────────────────────
+           Definitions were collected when the script was loaded, so the block
+           itself does nothing here; skipping it keeps its body from running as
+           top-level commands. */
+        if (is_fn_header(text)) {
+            i = block_end_or_count(script, i);
+            continue;
+        }
+
         if (is_break_line(text)) {
             if (in_loop) return FLOW_BREAK;
 
@@ -447,6 +566,15 @@ static Flow exec_range(Script *script, int start, int end, int in_loop) {
         }
 
         /* ── Everything else is treated as a command (out, in, run, …) ─ */
+        /* ── Call to a user-defined function ──────────────────────────
+           Anything shaped like "name(...)" is a call, so a misspelled function
+           is reported as a missing function rather than a missing command. */
+        if (is_call_line(text)) {
+            exec_function_call(text, line_num);
+            i++;
+            continue;
+        }
+
         run_command(text, line_num);
         i++;
     }
@@ -467,6 +595,10 @@ static void run_script(Script *script, const char *filename) {
 
     path_directory(filename, current_dir, sizeof(current_dir));
 
+    /* Every definition in the file is available from its first line until the
+       file is done, which is why a call may come before its definition. */
+    functions_register(script, current_dir);
+
     exec_script(script);
 
     snprintf(current_dir, sizeof(current_dir), "%s", saved_dir);
@@ -482,6 +614,7 @@ void interpret_file(const char *filename) {
     }
 
     run_script(&script, filename);
+    functions_unregister_script(&script);
     script_free(&script);
 }
 
@@ -565,5 +698,6 @@ void cmd_run(char *args, int line_num) {
     run_script(&script, full_path);
     run_depth--;
 
+    functions_unregister_script(&script);
     script_free(&script);
 }

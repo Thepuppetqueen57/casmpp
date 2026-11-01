@@ -235,6 +235,80 @@ end
 
 Every block still ends with its own end, and an elif or else belongs to the closest if above it.
 
+## Functions
+You make a function with fn, a name, and the parameters it takes, and you close it with end:
+
+```
+fn greet(str who, int times)
+    for i = 0-times
+        out who;
+    end
+end
+```
+
+Parameters have the usual three types — str, int and sml — and are separated by commas. A function can take no parameters at all:
+
+```
+fn banner()
+    out "welcome";
+end
+```
+
+Call a function by writing its name and its arguments on a line of their own:
+
+```
+greet("cool", 3);
+banner();
+```
+
+An argument can be a value written right there, like "cool" or 5, or a variable: greet(word, 5) works too. If the number of arguments or one of their types does not match the definition, the call is reported and nothing runs.
+
+A function can hold everything the rest of the language can: if, elif, else, while, for and break all work inside it, nested as usual. break only stops a loop of the function it is written in.
+
+Parameters, and any variable declared inside a function, belong to that call. They are gone when the function ends, and a declaration inside a function does not change a variable of the same name outside it:
+
+```
+int total = 0;
+
+fn add(int amount)
+    int total += amount;
+end
+
+fn shadow()
+    int total = 99;
+    out total;
+end
+
+add(5);
+out total;
+shadow();
+out total;
+```
+
+That prints 5, then 99, then 5. The math assignments += -= *= /= change the variable that already exists, so a function can change an outside one, but int total = ... always makes a local one.
+
+Because every call keeps its own parameters, a function can call itself. Arguments are values or variables and not expressions yet, so count down with a variable:
+
+```
+fn countdown(int n)
+    if n == 0
+        out "liftoff";
+    else
+        out n;
+        int next = 0;
+        int next += n;
+        int next -= 1;
+        countdown(next);
+    end
+end
+
+countdown(3);
+```
+
+A definition can be written above or below the lines that call it. Definitions belong to the file they are written in, and only at its top level: running another file makes that file's functions available while it runs, and they are gone afterwards. A function's run lines look for their files next to the file that defines the function.
+
+Functions do not return a value — they print, loop and change variables. One file can define up to 64 functions, a function can take up to 8 parameters, and calls can nest up to 32 deep.
+
 ## Comments
 To add a comment you need to put a hashtag at the beginning of the line. Like this:
 

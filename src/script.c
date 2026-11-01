@@ -29,17 +29,29 @@ int is_for_header(const char *line) {
     return is_keyword_line(line, "for") || strncmp(line, "for ", 4) == 0;
 }
 
+/* A function definition opens a block too, so the interpreter can skip it and
+   script_find_end can count it when matching "end" lines. */
+int is_fn_header(const char *line) {
+    return strncmp(line, "fn", 2) == 0 &&
+           (line[2] == ' ' || line[2] == '\t' || line[2] == '\0');
+}
+
 int is_end_line(const char *line) {
     return is_keyword_line(line, "end");
 }
 
 int is_block_opener(const char *line) {
-    return is_if_header(line) || is_while_header(line) || is_for_header(line);
+    return is_if_header(line) || is_while_header(line) || is_for_header(line) ||
+           is_fn_header(line);
 }
 
 /* ─────────────────────────────────────────────
    SCRIPT STORAGE
    ───────────────────────────────────────────── */
+
+/* Source of Script.id. Every load gets a number of its own, so a function can
+   say exactly which script it belongs to. */
+static int next_script_id = 0;
 
 /* Add one executable line to the script, growing the array when it is full. */
 static void append_line(Script *script, const char *text, int line_num) {
@@ -75,6 +87,8 @@ int script_load(const char *filename, Script *script) {
     script->count         = 0;
     script->capacity      = 0;
     script->last_line_num = 0;
+
+    script->id = ++next_script_id;
 
     FILE *file = fopen(filename, "r");
     if (!file) return 0;

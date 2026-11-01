@@ -101,7 +101,11 @@ int exec_declaration(const char *line, int line_num) {
 
     if (!parse_declaration(line, type, name, op, value, line_num)) return 1;
 
-    Variable *existing = find_variable(name);
+    /* "=" may only touch the variables of the call that is running, so a
+       declaration inside a function shadows a top-level name instead of
+       overwriting it. Math changes the nearest variable that already exists,
+       which lets a function update a top-level one. */
+    Variable *existing = strcmp(op, "=") == 0 ? find_variable_local(name) : find_variable(name);
 
     /* "=" sets the value, creating the variable the first time and redefining
        it afterwards. */

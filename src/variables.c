@@ -7,19 +7,64 @@
 Variable variables[MAX_VARIABLES]; /* flat array holding all declared variables */
 int      variable_count = 0;       /* how many variables have been declared so far */
 
+/* Call frames. Every function call records where its own variables begin, so
+   its parameters and locals can be dropped again in one step. Everything
+   below frame_starts[0] belongs to the top level. */
+static int frame_starts[MAX_CALL_DEPTH];
+static int frame_depth = 0;
+
 /* ─────────────────────────────────────────────
    VARIABLE HELPERS
    ───────────────────────────────────────────── */
 
-/* Look up a variable by name.
+/* Look up a variable declared by the call that is running right now.
    Returns a pointer to the Variable if found, or NULL if it doesn't exist. */
-Variable *find_variable(const char *name) {
-    for (int i = 0; i < variable_count; i++) {
+Variable *find_variable_local(const char *name) {
+    int first = frame_depth > 0 ? frame_starts[frame_depth - 1] : 0;
+    for (int i = first; i < variable_count; i++) {
         if (strcmp(variables[i].name, name) == 0) {
             return &variables[i];
         }
     }
     return NULL;
+}
+
+/* Look up a variable as a running script sees it: the current call's own
+   variables first, then the top level ones. A function never sees the locals
+   of the function that called it, which is what keeps recursion sane.
+   Returns a pointer to the Variable if found, or NULL if it doesn't exist. */
+Variable *find_variable(const char *name) {
+    Variable *local = find_variable_local(name);
+    if (local) return local;
+
+    int last = frame_depth > 0 ? frame_starts[0] : variable_count;
+
+    for (int i = 0; i < last; i++) {
+        if (strcmp(variables[i].name, name) == 0) {
+            return &variables[i];
+        }
+    }
+    return NULL;
+}
+
+/* Start a call: everything declared from here on belongs to it.
+   Returns 0 after reporting an error when the calls are nested too deeply. */
+int frame_enter(int line_num) {
+    if (frame_depth >= MAX_CALL_DEPTH) {
+        printf(COLOR_RED "Error: functions are nested too deeply (limit is %d) on line %d" COLOR_RESET "\n",
+               MAX_CALL_DEPTH, line_num);
+        return 0;
+    }
+
+    frame_starts[frame_depth++] = variable_count;
+    return 1;
+}
+
+/* End a call, dropping its parameters and locals. */
+void frame_leave(void) {
+    if (frame_depth == 0) return;
+
+    variable_count = frame_starts[--frame_depth];
 }
 
 /* Declare a variable, or redefine it when the name is already taken.
@@ -31,7 +76,7 @@ Variable *find_variable(const char *name) {
    would leave the old value in front of it, where every lookup would keep
    finding the old one. */
 void add_variable(const char *name, VarType type, const char *value) {
-    Variable *var = find_variable(name);
+    Variable *var = find_variable_local(name);
 
     if (!var) {
         if (variable_count >= MAX_VARIABLES) {

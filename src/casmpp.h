@@ -21,11 +21,14 @@
    CONSTANTS
    ───────────────────────────────────────────── */
 
-#define MAX_VARIABLES 100   /* Maximum number of variables a script can declare */
+#define MAX_VARIABLES 512   /* Maximum number of variables, all call frames included */
 #define MAX_NAME_LEN  50    /* Maximum length of a variable name */
 #define MAX_STR_LEN   256   /* Maximum length of a string variable's value */
 #define MAX_RUN_DEPTH 32    /* How many 'run' files may be open at the same time */
 #define MAX_BLOCK_DEPTH 64  /* How deeply if/while/for blocks may nest */
+#define MAX_FUNCTIONS 64    /* How many functions may be defined at the same time */
+#define MAX_PARAMS    8     /* How many parameters one function may take */
+#define MAX_CALL_DEPTH 32   /* How deeply functions may call each other */
 
 /* ─────────────────────────────────────────────
    TYPES
@@ -83,7 +86,30 @@ typedef struct {
     int         count;         /* executable lines (blank and # lines dropped) */
     int         capacity;
     int         last_line_num; /* lines read from the file, for error messages */
+    int         id;            /* unique per load: tells two scripts apart */
 } Script;
+
+/* One parameter of a function: the type it expects, and the name it is bound
+   to while the body runs. */
+typedef struct {
+    VarType type;
+    char    name[MAX_NAME_LEN];
+} Param;
+
+/* A function defined by a script. Its body is a range of lines in the script
+   that declared it, so it can only be called while that script is loaded —
+   the pointer and the id together say which script that is. */
+typedef struct {
+    char    name[MAX_NAME_LEN];
+    Param   params[MAX_PARAMS];
+    int     param_count;
+    Script *script;
+    int     script_id;
+    int     body_start;       /* index of the first line inside the block */
+    int     body_end;         /* index of the "end" that closes it */
+    int     def_line;         /* where it was written, for error messages */
+    char    dir[MAX_STR_LEN]; /* directory of the defining file, for "run" */
+} Function;
 
 /* ─────────────────────────────────────────────
    VARIABLE STORE (variables.c)
@@ -92,8 +118,12 @@ typedef struct {
 extern Variable variables[MAX_VARIABLES]; /* flat array holding all declared variables */
 extern int      variable_count;           /* how many variables have been declared so far */
 
-Variable *find_variable(const char *name);
+Variable *find_variable(const char *name);       /* current call's variables, then top level */
+Variable *find_variable_local(const char *name); /* the current call's variables only */
 void      add_variable(const char *name, VarType type, const char *value);
+
+int  frame_enter(int line_num); /* start a call's variables; 0 when calls are too deep */
+void frame_leave(void);         /* drop them again */
 int       set_variable_literal(Variable *var, VarType type, const char *value, int line_num);
 int       set_variable_math(Variable *var, const char *op, const char *rhs, int line_num);
 
@@ -138,6 +168,7 @@ int is_elif_header(const char *line);
 int is_else_header(const char *line);
 int is_while_header(const char *line);
 int is_for_header(const char *line);
+int is_fn_header(const char *line);
 int is_end_line(const char *line);
 int is_block_opener(const char *line);
 
@@ -147,6 +178,18 @@ int is_block_opener(const char *line);
 
 int is_declaration_line(const char *line);
 int exec_declaration(const char *line, int line_num);
+
+/* ─────────────────────────────────────────────
+   USER-DEFINED FUNCTIONS (function.c)
+   ───────────────────────────────────────────── */
+
+void functions_register(Script *script, const char *dir);
+void functions_unregister_script(Script *script);
+Function *find_function(const char *name);
+
+int is_call_line(const char *line);
+int parse_function_call(const char *line, char *name, char args[][MAX_STR_LEN],
+                        int *arg_count, int line_num);
 
 /* ─────────────────────────────────────────────
    IF BLOCKS AND INTERPRETER (interpreter.c)
