@@ -477,7 +477,15 @@ static void exec_function_call(const char *line, int line_num) {
     int saved_block_depth = block_depth;
     block_depth = 0;
 
-    exec_range(function->script, function->body_start, function->body_end, 0);
+    /* The body lives in another file's lines, so copying them here keeps the
+       call valid even if the body runs a file that redefines the function. */
+    Script *body      = function->script;
+    int     body_from = function->body_start;
+    int     body_to   = function->body_end;
+
+    body->running++;
+    exec_range(body, body_from, body_to, 0);
+    body->running--;
 
     block_depth = saved_block_depth;
     snprintf(current_dir, sizeof(current_dir), "%s", saved_dir);
@@ -595,9 +603,10 @@ static void run_script(Script *script, const char *filename) {
 
     path_directory(filename, current_dir, sizeof(current_dir));
 
-    /* Every definition in the file is available from its first line until the
-       file is done, which is why a call may come before its definition. */
-    functions_register(script, current_dir);
+    /* Every definition in the file is available from its first line, and stays
+       available afterwards, which is why a call may come before its definition
+       and why the file that runs this one can call them. */
+    functions_register(script, current_dir, filename);
 
     exec_script(script);
 
@@ -614,8 +623,7 @@ void interpret_file(const char *filename) {
     }
 
     run_script(&script, filename);
-    functions_unregister_script(&script);
-    script_free(&script);
+    functions_close(&script);
 }
 
 /* ─────────────────────────────────────────────
@@ -698,6 +706,6 @@ void cmd_run(char *args, int line_num) {
     run_script(&script, full_path);
     run_depth--;
 
-    functions_unregister_script(&script);
-    script_free(&script);
+    /* Its functions outlive the run, so the script is kept if it has any. */
+    functions_close(&script);
 }

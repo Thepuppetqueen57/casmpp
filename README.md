@@ -305,7 +305,14 @@ end
 countdown(3);
 ```
 
-A definition can be written above or below the lines that call it. Definitions belong to the file they are written in, and only at its top level: running another file makes that file's functions available while it runs, and they are gone afterwards. A function's run lines look for their files next to the file that defines the function.
+A definition can be written above or below the lines that call it, but only at the top level of a file. Functions outlive the file that defines them, which is what makes a library file useful — running it hands you its functions for the rest of the program:
+
+```
+run "greetings.casmpp";
+greet();
+```
+
+Running the same file again replaces the functions it defined the time before, and when two files define the same name the one loaded last wins. A function's run lines look for their files next to the file that defines the function.
 
 Functions do not return a value — they print, loop and change variables. One file can define up to 64 functions, a function can take up to 8 parameters, and calls can nest up to 32 deep.
 

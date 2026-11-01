@@ -88,7 +88,8 @@ int script_load(const char *filename, Script *script) {
     script->capacity      = 0;
     script->last_line_num = 0;
 
-    script->id = ++next_script_id;
+    script->id      = ++next_script_id;
+    script->running = 0;
 
     FILE *file = fopen(filename, "r");
     if (!file) return 0;

@@ -31,5 +31,6 @@ int main(int argc, char *argv[]) {
     }
 
     interpret_file(filename);
+    functions_shutdown();
     return 0;
 }

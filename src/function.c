@@ -4,12 +4,41 @@
    FUNCTION REGISTRY
    ───────────────────────────────────────────── */
 
-/* Every function that is currently loaded. Entries are added when a script is
-   loaded, in the order the definitions appear, and removed when it is freed.
+/* Every function that is currently known. Entries are added when a file is
+   loaded, in the order the definitions appear, and kept after it is done.
    Lookups walk the list backwards, so a definition from a file that was "run"
    shadows one from the file that ran it. */
 static Function functions[MAX_FUNCTIONS];
 static int      function_count = 0;
+
+/* Scripts still in memory although they have finished running, because the body
+   of a function is a range of their lines. They are freed when the program
+   ends. */
+static Script **kept_scripts = NULL;
+static int      kept_count = 0;
+static int      kept_capacity = 0;
+
+static void forget_path(const char *path);
+
+/* Does any function still point into this script's lines? */
+static int script_referenced(Script *script) {
+    for (int i = 0; i < function_count; i++) {
+        if (functions[i].script == script) return 1;
+    }
+    return 0;
+}
+
+/* Free one of the kept scripts, and forget it. */
+static void release_kept_script(Script *script) {
+    for (int i = 0; i < kept_count; i++) {
+        if (kept_scripts[i] != script) continue;
+
+        script_free(kept_scripts[i]);
+        free(kept_scripts[i]);
+        kept_scripts[i] = kept_scripts[--kept_count];
+        return;
+    }
+}
 
 /* ─────────────────────────────────────────────
    NAMES
@@ -180,7 +209,11 @@ static int parse_signature(const char *header, int line_num, Function *out) {
    among the other lines does not matter — the whole file is scanned before any
    of it runs. A block that never closes is reported and stops the scan, since
    nothing after it can be trusted. */
-void functions_register(Script *script, const char *dir) {
+void functions_register(Script *script, const char *dir, const char *path) {
+    /* Running a file a second time replaces its definitions, so a loop that runs
+       a library does not pile copies up until the registry is full. */
+    forget_path(path);
+
     int depth = 0;
 
     for (int i = 0; i < script->count; i++) {
@@ -218,6 +251,7 @@ void functions_register(Script *script, const char *dir) {
                         parsed.body_start = i + 1;
                         parsed.body_end   = end;
                         parsed.def_line   = line_num;
+                        snprintf(parsed.path, sizeof(parsed.path), "%s", path);
                         snprintf(parsed.dir, sizeof(parsed.dir), "%s", dir);
                         functions[function_count++] = parsed;
                     }
@@ -241,19 +275,84 @@ void functions_register(Script *script, const char *dir) {
     }
 }
 
-/* Forget every function a script defined, so its lines can be freed and a
-   later file can define the same names again. */
-void functions_unregister_script(Script *script) {
-    int kept = 0;
+/* Forget the functions a file defined the last time it was loaded, so running
+   the same file again replaces them instead of piling up a second copy — and so
+   a file that no longer defines a function stops providing it. */
+static void forget_path(const char *path) {
+    int     kept   = 0;
+    Script *orphan = NULL;
 
     for (int i = 0; i < function_count; i++) {
-        if (functions[i].script_id == script->id) continue;
+        if (strcmp(functions[i].path, path) == 0) {
+            if (!orphan) orphan = functions[i].script;
+            continue;
+        }
 
         if (kept != i) functions[kept] = functions[i];
         kept++;
     }
 
     function_count = kept;
+
+    /* The old file's lines are only still needed while a call is running them. */
+    if (orphan && orphan->running == 0 && !script_referenced(orphan)) {
+        release_kept_script(orphan);
+    }
+}
+
+/* Called when a script has finished running. A script that defined a function
+   has to stay in memory — the body of that function is a range of its lines —
+   so it is kept for the rest of the program. Every other script is freed as
+   before. */
+void functions_close(Script *script) {
+    if (!script_referenced(script)) {
+        script_free(script);
+        return;
+    }
+
+    if (kept_count == kept_capacity) {
+        int      capacity = kept_capacity == 0 ? 8 : kept_capacity * 2;
+        Script **grown    = realloc(kept_scripts, (size_t)capacity * sizeof(*grown));
+
+        if (!grown) {
+            fprintf(stderr, COLOR_RED "function: out of memory" COLOR_RESET "\n");
+            exit(EXIT_FAILURE);
+        }
+
+        kept_scripts  = grown;
+        kept_capacity = capacity;
+    }
+
+    Script *kept = malloc(sizeof(*kept));
+    if (!kept) {
+        fprintf(stderr, COLOR_RED "function: out of memory" COLOR_RESET "\n");
+        exit(EXIT_FAILURE);
+    }
+
+    /* The caller's struct goes away with the frame that ran the file, so its
+       lines move to this copy and every function follows them across. */
+    *kept         = *script;
+    kept->running = 0;
+
+    kept_scripts[kept_count++] = kept;
+
+    for (int i = 0; i < function_count; i++) {
+        if (functions[i].script == script) functions[i].script = kept;
+    }
+}
+
+/* Free the scripts kept for their functions. Called once, at the end. */
+void functions_shutdown(void) {
+    for (int i = 0; i < kept_count; i++) {
+        script_free(kept_scripts[i]);
+        free(kept_scripts[i]);
+    }
+
+    free(kept_scripts);
+
+    kept_scripts  = NULL;
+    kept_count    = 0;
+    kept_capacity = 0;
 }
 
 /* Find a function by name, newest definition first. */

@@ -87,6 +87,7 @@ typedef struct {
     int         capacity;
     int         last_line_num; /* lines read from the file, for error messages */
     int         id;            /* unique per load: tells two scripts apart */
+    int         running;       /* how many calls are running this script's lines */
 } Script;
 
 /* One parameter of a function: the type it expects, and the name it is bound
@@ -96,9 +97,11 @@ typedef struct {
     char    name[MAX_NAME_LEN];
 } Param;
 
-/* A function defined by a script. Its body is a range of lines in the script
-   that declared it, so it can only be called while that script is loaded —
-   the pointer and the id together say which script that is. */
+/* A function defined by a file. Its body is a range of lines in the script that
+   file was loaded into, and that script is kept in memory for as long as the
+   function exists — so a function from a file that was "run" keeps working
+   after that file is done. The pointer and the id together say which script it
+   is. */
 typedef struct {
     char    name[MAX_NAME_LEN];
     Param   params[MAX_PARAMS];
@@ -108,7 +111,8 @@ typedef struct {
     int     body_start;       /* index of the first line inside the block */
     int     body_end;         /* index of the "end" that closes it */
     int     def_line;         /* where it was written, for error messages */
-    char    dir[MAX_STR_LEN]; /* directory of the defining file, for "run" */
+    char    path[MAX_STR_LEN]; /* the file it came from, replaced when that re-runs */
+    char    dir[MAX_STR_LEN];  /* directory of the defining file, for "run" */
 } Function;
 
 /* ─────────────────────────────────────────────
@@ -183,8 +187,9 @@ int exec_declaration(const char *line, int line_num);
    USER-DEFINED FUNCTIONS (function.c)
    ───────────────────────────────────────────── */
 
-void functions_register(Script *script, const char *dir);
-void functions_unregister_script(Script *script);
+void functions_register(Script *script, const char *dir, const char *path);
+void functions_close(Script *script);  /* keep a finished script only if a function needs it */
+void functions_shutdown(void);         /* free the scripts that were kept */
 Function *find_function(const char *name);
 
 int is_call_line(const char *line);

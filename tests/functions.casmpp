@@ -2,6 +2,9 @@
 # A call may come before the definition, because definitions are
 # collected when the file is loaded.
 
+run "importedfunctions.casmpp";
+
+testfunc();
 greet("cool", 3);
 banner();
 count_up(3);

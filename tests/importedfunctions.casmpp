@@ -1,0 +1,3 @@
+fn testfunc()
+    out "it works!"
+end
