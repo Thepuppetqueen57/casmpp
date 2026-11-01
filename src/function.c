@@ -55,7 +55,7 @@ static int is_name_char(char c) {
 /* Words the interpreter already gives a meaning to. A function with one of
    these names could never be called without breaking that meaning. */
 static const char *reserved_words[] = {
-    "if", "elif", "else", "while", "for", "end", "fn", "break",
+    "if", "elif", "else", "while", "for", "end", "fn", "break", "return",
     "out", "in", "run", "int", "str", "sml"
 };
 
@@ -412,8 +412,9 @@ static int store_argument(char *raw, const char *function_name,
 }
 
 /* Split "name(argument, argument)" into the name and its arguments.
-   Arguments are kept as written (trimmed), and a quoted string may contain
-   commas. Returns 1 on success, or 0 after reporting an error. */
+   Arguments are kept as written (trimmed) so an expression or a quoted string
+   is evaluated later, and a quoted string may contain commas. Returns 1 on
+   success, or 0 after reporting an error. */
 int parse_function_call(const char *line, char *name, char args[][MAX_STR_LEN],
                         int *arg_count, int line_num) {
     *arg_count = 0;
@@ -458,12 +459,6 @@ int parse_function_call(const char *line, char *name, char args[][MAX_STR_LEN],
             quoted = 1;
             if (length < (int)sizeof(current) - 1) current[length++] = c;
             continue;
-        }
-
-        if (c == '(') {
-            printf(COLOR_RED "Syntax error: function arguments must be values or variables, not expressions, on line %d" COLOR_RESET "\n",
-                   line_num);
-            return 0;
         }
 
         if (c == ',') {

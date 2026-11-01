@@ -64,10 +64,13 @@ typedef struct {
 } Operand;
 
 /* How a block finished. A loop body that runs "break" reports FLOW_BREAK so
-   the enclosing loop stops; every other path reports FLOW_NORMAL. */
+   the enclosing loop stops, and a body that runs "return" reports FLOW_RETURN
+   so every block it is inside stops too; every other path reports
+   FLOW_NORMAL. */
 typedef enum {
     FLOW_NORMAL,
-    FLOW_BREAK
+    FLOW_BREAK,
+    FLOW_RETURN
 } Flow;
 
 /* One executable line of a script: its text (trimmed, without a trailing
@@ -152,12 +155,21 @@ void run_command(const char *line, int line_num);
    ───────────────────────────────────────────── */
 
 int is_integer_literal(const char *token);
-int read_operand(char **cursor, char *out, int *is_literal_text, int line_num);
-int read_operator(char **cursor, char *out, int line_num);
 int resolve_operand(const char *token, int is_literal_text, int line_num, Operand *out);
 int compare_operands(const Operand *a, const Operand *b);
 int evaluate_condition(const char *header, int line_num, int *out_truth);
 int is_keyword_line(const char *line, const char *keyword);
+
+/* ─────────────────────────────────────────────
+   EXPRESSIONS (expression.c)
+   ───────────────────────────────────────────── */
+
+int eval_expression(const char *text, int line_num, Operand *out);
+int eval_int(const char *text, int line_num, int *out_value);
+
+/* Run a call written inside an expression, giving back what it returned
+   (interpreter.c). */
+int call_for_value(const char *call_text, int line_num, Operand *result);
 
 /* ─────────────────────────────────────────────
    SCRIPT STORAGE AND BLOCK HEADERS (script.c)

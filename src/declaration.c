@@ -108,18 +108,49 @@ int exec_declaration(const char *line, int line_num) {
     Variable *existing = strcmp(op, "=") == 0 ? find_variable_local(name) : find_variable(name);
 
     /* "=" sets the value, creating the variable the first time and redefining
-       it afterwards. */
+       it afterwards. A str takes the text as written; an int or an sml takes an
+       expression, so "int total = 2 * 3" and "int total = count + 1" work. */
     if (strcmp(op, "=") == 0) {
         Variable prepared;
         snprintf(prepared.name, sizeof(prepared.name), "%s", name);
 
-        if (!set_variable_literal(&prepared, type, value, line_num)) return 1;
+        char stored[MAX_STR_LEN];
+
+        if (type == TYPE_STR) {
+            if (!set_variable_literal(&prepared, type, value, line_num)) return 1;
+            snprintf(stored, sizeof(stored), "%s", value);
+        } else {
+            Operand result;
+            if (!eval_expression(value, line_num, &result)) return 1;
+
+            if (result.is_text) {
+                printf(COLOR_RED "Error: '%s' is text, so it cannot be stored in the %s variable '%s' on line %d" COLOR_RESET "\n",
+                       value, type == TYPE_INT ? "int" : "sml", name, line_num);
+                return 1;
+            }
+
+            if (type == TYPE_SML && result.int_value != 0 && result.int_value != 1) {
+                printf(COLOR_RED "Error: sml variable '%s' must be 0 or 1, got '%s' on line %d" COLOR_RESET "\n",
+                       name, value, line_num);
+                return 1;
+            }
+
+            snprintf(stored, sizeof(stored), "%d", result.int_value);
+
+            if (type == TYPE_SML) {
+                prepared.type           = TYPE_SML;
+                prepared.value.smlValue = result.int_value;
+            } else {
+                prepared.type           = TYPE_INT;
+                prepared.value.intValue = result.int_value;
+            }
+        }
 
         if (existing) {
             existing->type  = prepared.type;
             existing->value = prepared.value;
         } else {
-            add_variable(name, type, value);
+            add_variable(name, prepared.type, stored);
         }
 
         return 1;

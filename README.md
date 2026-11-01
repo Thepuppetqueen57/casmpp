@@ -66,7 +66,7 @@ end
 
 The colon at the end of a condition is optional, so `if cooler == 5:` and `else:` work too if you are used to python.
 
-Both sides of a comparison can be a variable, a number, or a string in quotes:
+Both sides of a comparison can be a variable, a number, an expression, or a string in quotes:
 
 ```
 int a = 5;
@@ -126,7 +126,7 @@ int thing = 5;
 str thing = "now text";
 ```
 
-For math there are += -= *= and /=. They work on int variables that already exist, and they can take a number or another variable on the right:
+For math there are += -= *= and /=. They work on int variables that already exist, and the right side can be a number, a variable or a whole expression:
 
 ```
 int score = 10;
@@ -135,21 +135,57 @@ out score;
 
 int bonus = 2;
 int score += bonus;
+int score += bonus * 2;
 ```
 
 A few things are errors on purpose, because before they would quietly turn into 0:
 
 ```
-# error, write int score += 1 instead
-int score = score + 1;
-
 # error, points was never declared
 int points += 1;
 
 str name = "bob";
 # error, math is for ints
 int name += 1;
+
+str other = "bob";
+# error, text cannot be added to a number
+int score += other;
 ```
+
+## Math
+You do not need += -= *= /= to do math. Anywhere a number is expected you can write an expression, and + - * / % and parentheses all work:
+
+```
+int a = 2 + 3 * 4;
+int b = (2 + 3) * 4;
+int c = 17 / 5;
+int d = 17 % 5;
+int e = -a + 1;
+
+out a;
+out b;
+out c * 10;
+```
+
+That prints 14, 20 and 30: multiplication and division happen before addition and subtraction, and parentheses come first of all. Division keeps the whole part only, so 17 / 5 is 3, and the rest is what % gives you.
+
+An expression can be a number, a variable, another expression in parentheses, or a call to a function that returns a value. Anything that can hold a value takes one: declarations, += and friends, if and while conditions, function arguments, out and return:
+
+```
+int count = 3;
+
+if count * 2 > 5
+    out "big";
+end
+
+while count > 0
+    out count * count;
+    int count -= 1;
+end
+```
+
+Math is for numbers. Using a str variable in an expression is an error rather than a quiet 0, and dividing by zero is reported too.
 
 ## While
 A while loop runs its body again and again for as long as its condition is true. The condition is exactly the same as an if condition, so any operator works and either side can be a variable, a number or a string:
@@ -287,7 +323,7 @@ out total;
 
 That prints 5, then 99, then 5. The math assignments += -= *= /= change the variable that already exists, so a function can change an outside one, but int total = ... always makes a local one.
 
-Because every call keeps its own parameters, a function can call itself. Arguments are values or variables and not expressions yet, so count down with a variable:
+Because every call keeps its own parameters, a function can call itself:
 
 ```
 fn countdown(int n)
@@ -295,15 +331,37 @@ fn countdown(int n)
         out "liftoff";
     else
         out n;
-        int next = 0;
-        int next += n;
-        int next -= 1;
-        countdown(next);
+        countdown(n - 1);
     end
 end
 
 countdown(3);
 ```
+
+A function hands a value back with return. What follows it is an expression, and the call becomes that value, so a call can be used anywhere a value can:
+
+```
+fn double(int n)
+    return n * 2
+end
+
+int doubled = double(5) + 1;
+out doubled;
+out double(2) * 3;
+```
+
+return ends the call right away, even from inside an if or a loop, so one function can have several of them:
+
+```
+fn absolute(int n)
+    if n < 0
+        return -n
+    end
+    return n
+end
+```
+
+A bare return ends the call without a value. That is fine when the call is a line of its own, and an error when the call's value is used. return written outside a function is an error too.
 
 A definition can be written above or below the lines that call it, but only at the top level of a file. Functions outlive the file that defines them, which is what makes a library file useful — running it hands you its functions for the rest of the program:
 
@@ -314,7 +372,7 @@ greet();
 
 Running the same file again replaces the functions it defined the time before, and when two files define the same name the one loaded last wins. A function's run lines look for their files next to the file that defines the function.
 
-Functions do not return a value — they print, loop and change variables. One file can define up to 64 functions, a function can take up to 8 parameters, and calls can nest up to 32 deep.
+One file can define up to 64 functions, a function can take up to 8 parameters, and calls can nest up to 32 deep.
 
 ## Comments
 To add a comment you need to put a hashtag at the beginning of the line. Like this:

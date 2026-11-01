@@ -1,0 +1,66 @@
+# Expressions everywhere and return values.
+
+int a = 2 + 3 * 4;
+out a;
+
+int b = (2 + 3) * 4;
+out b;
+
+int minus = 10 - 4 - 3;
+out minus;
+
+int neg = -5 + 2;
+out neg;
+
+int divided = 17 / 5;
+out divided;
+
+int leftover = 17 % 5;
+out leftover;
+
+int c = 0;
+int c += 2 * 3;
+int c *= 2;
+out c;
+
+fn double(int n)
+    return n * 2
+end
+
+out double(5);
+
+int doubled = double(a) + 1;
+out doubled;
+
+# return works from inside a block.
+fn absolute(int n)
+    if n < 0
+        return -n
+    end
+    return n
+end
+
+out absolute(-7);
+out absolute(7);
+
+# A function can hand back text too.
+fn label(str word)
+    return word
+end
+
+out label("done");
+
+# Expressions in loop headers, conditions and out.
+int i = 0;
+while i < 3
+    out i * i;
+    int i += 1;
+end
+
+if double(2) == 4
+    out "four";
+end
+
+for j = 0-double(2)
+    out j + 10;
+end

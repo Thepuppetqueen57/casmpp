@@ -137,9 +137,10 @@ int set_variable_literal(Variable *var, VarType type, const char *value, int lin
 }
 
 /* Apply a math assignment — +=, -=, *= or /= — to an int variable.
-   The right-hand side may be a number or another numeric variable, so both
-   "int score += 1" and "int score += bonus" work. Math is only defined for
-   int variables. Returns 1 on success, or 0 after reporting an error. */
+   The right-hand side is an expression, so "int score += 1",
+   "int score += bonus" and "int score += bonus * 2" all work. Math is only
+   defined for int variables. Returns 1 on success, or 0 after reporting an
+   error. */
 int set_variable_math(Variable *var, const char *op, const char *rhs, int line_num) {
     if (var->type != TYPE_INT) {
         printf(COLOR_RED "Error: variable '%s' is not an int, so '%s' cannot be used on it (line %d)" COLOR_RESET "\n",
@@ -148,21 +149,7 @@ int set_variable_math(Variable *var, const char *op, const char *rhs, int line_n
     }
 
     int amount;
-    if (is_integer_literal(rhs)) {
-        amount = atoi(rhs);
-    } else {
-        Variable *other = find_variable(rhs);
-        if (!other) {
-            printf(COLOR_RED "Error: variable '%s' not found (line %d)" COLOR_RESET "\n", rhs, line_num);
-            return 0;
-        }
-        if (other->type == TYPE_STR) {
-            printf(COLOR_RED "Error: variable '%s' is not a number, so it cannot be used with '%s' (line %d)" COLOR_RESET "\n",
-                   other->name, op, line_num);
-            return 0;
-        }
-        amount = other->type == TYPE_SML ? other->value.smlValue : other->value.intValue;
-    }
+    if (!eval_int(rhs, line_num, &amount)) return 0;
 
     if (strcmp(op, "+=") == 0) {
         var->value.intValue += amount;

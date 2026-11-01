@@ -18,8 +18,14 @@ static int run_depth = 0;
    nested thousands of levels deep. */
 static int block_depth = 0;
 
+/* What each running call is going to return. A nested call has its own slot, so
+   it cannot overwrite the value the call around it is about to use. */
+static Operand call_results[MAX_CALL_DEPTH];
+static int     call_result_set[MAX_CALL_DEPTH];
+static int     call_result_depth = 0;
+
 static Flow exec_range(Script *script, int start, int end, int in_loop);
-static void exec_function_call(const char *line, int line_num);
+static int  exec_call(const char *line, int line_num, int want_value, Operand *result);
 
 /* ─────────────────────────────────────────────
    BLOCK HELPERS
@@ -129,7 +135,7 @@ static Flow exec_if(Script *script, int opener, int in_loop, int *next) {
 
         if (is_elif_header(text)) {
             flow = exec_segment(script, &segment_start, i, run_branch, in_loop);
-            if (flow == FLOW_BREAK) break;
+            if (flow != FLOW_NORMAL) break;
 
             int elif_truth = 0;
             if (evaluate_condition(text, script->lines[i].line_num, &elif_truth)) {
@@ -147,7 +153,7 @@ static Flow exec_if(Script *script, int opener, int in_loop, int *next) {
 
         if (is_else_header(text)) {
             flow = exec_segment(script, &segment_start, i, run_branch, in_loop);
-            if (flow == FLOW_BREAK) break;
+            if (flow != FLOW_NORMAL) break;
 
             run_branch = !chain_broken && !chain_taken;
             if (run_branch) chain_taken = 1;
@@ -220,6 +226,7 @@ static Flow exec_while(Script *script, int opener, int *next) {
             flow = FLOW_NORMAL;
             break;
         }
+        if (flow == FLOW_RETURN) break;
     }
 
     block_depth--;
@@ -330,8 +337,8 @@ static Flow exec_for(Script *script, int opener, int *next) {
 
     Operand start;
     Operand end;
-    if (!resolve_operand(start_token, 0, line_num, &start) ||
-        !resolve_operand(end_token, 0, line_num, &end)) {
+    if (!eval_expression(start_token, line_num, &start) ||
+        !eval_expression(end_token, line_num, &end)) {
         *next = body_end + 1;
         return FLOW_NORMAL;
     }
@@ -358,6 +365,7 @@ static Flow exec_for(Script *script, int opener, int *next) {
             flow  = FLOW_NORMAL;
             break;
         }
+        if (flow == FLOW_RETURN) break;
     }
 
     block_depth--;
@@ -404,55 +412,42 @@ static int argument_fits(const Operand *value, VarType type) {
 /* Execute one call line — "name(argument, argument);".
    Every argument is checked before the call's frame exists, so a bad call
    changes nothing. The body then runs with its own variables, its own block
-   nesting budget and the directory of the file that defined it. */
-static void exec_function_call(const char *line, int line_num) {
+   nesting budget and the directory of the file that defined it.
+   With want_value set the call is being used as a value, so its body has to
+   return one; it is stored in *result. Returns 1 on success, or 0 after
+   reporting an error. */
+static int exec_call(const char *line, int line_num, int want_value, Operand *result) {
     char name[MAX_NAME_LEN];
     char arguments[MAX_PARAMS][MAX_STR_LEN];
     int  argument_count = 0;
 
-    if (!parse_function_call(line, name, arguments, &argument_count, line_num)) return;
+    if (!parse_function_call(line, name, arguments, &argument_count, line_num)) return 0;
 
     Function *function = find_function(name);
     if (!function) {
         printf(COLOR_RED "Error: function '%s' not found on line %d" COLOR_RESET "\n", name, line_num);
-        return;
+        return 0;
     }
 
     if (argument_count != function->param_count) {
         printf(COLOR_RED "Error: function '%s' expects %d argument%s, got %d on line %d" COLOR_RESET "\n",
                name, function->param_count, function->param_count == 1 ? "" : "s",
                argument_count, line_num);
-        return;
+        return 0;
     }
 
     Operand values[MAX_PARAMS];
 
     for (int i = 0; i < argument_count; i++) {
-        char text[MAX_STR_LEN];
-        int  is_literal_text = 0;
-
-        if (arguments[i][0] == '"') {
-            size_t length = strlen(arguments[i]);
-            if (length < 2 || arguments[i][length - 1] != '"') {
-                printf(COLOR_RED "Syntax error: unterminated string in the call to '%s' on line %d" COLOR_RESET "\n",
-                       name, line_num);
-                return;
-            }
-            snprintf(text, sizeof(text), "%.*s", (int)(length - 2), arguments[i] + 1);
-            is_literal_text = 1;
-        } else {
-            snprintf(text, sizeof(text), "%s", arguments[i]);
-        }
-
-        if (!resolve_operand(text, is_literal_text, line_num, &values[i])) return;
+        if (!eval_expression(arguments[i], line_num, &values[i])) return 0;
 
         if (!argument_fits(&values[i], function->params[i].type)) {
             argument_type_error(name, i + 1, function->params[i].type, arguments[i], line_num);
-            return;
+            return 0;
         }
     }
 
-    if (!frame_enter(line_num)) return;
+    if (!frame_enter(line_num)) return 0;
 
     for (int i = 0; i < argument_count; i++) {
         char value[MAX_STR_LEN];
@@ -483,19 +478,80 @@ static void exec_function_call(const char *line, int line_num) {
     int     body_from = function->body_start;
     int     body_to   = function->body_end;
 
+    call_result_set[call_result_depth] = 0;
+    call_result_depth++;
+
     body->running++;
     exec_range(body, body_from, body_to, 0);
     body->running--;
+
+    call_result_depth--;
+
+    int     returned       = call_result_set[call_result_depth];
+    Operand returned_value = call_results[call_result_depth];
 
     block_depth = saved_block_depth;
     snprintf(current_dir, sizeof(current_dir), "%s", saved_dir);
 
     frame_leave();
+
+    /* A call used as a line of its own does not have to return anything. */
+    if (!want_value) return 1;
+
+    if (!returned) {
+        printf(COLOR_RED "Error: function '%s' did not return a value on line %d" COLOR_RESET "\n",
+               name, line_num);
+        return 0;
+    }
+
+    *result = returned_value;
+    return 1;
+}
+
+/* Run a call written inside an expression and give back what it returned. */
+int call_for_value(const char *call_text, int line_num, Operand *result) {
+    return exec_call(call_text, line_num, 1, result);
 }
 
 /* Is this line just the word "break"? */
 static int is_break_line(const char *line) {
     return strcmp(line, "break") == 0;
+}
+
+/* Is this line a return, with or without a value after it? */
+static int is_return_line(const char *line) {
+    return strcmp(line, "return") == 0 || strncmp(line, "return ", 7) == 0;
+}
+
+/* Run a "return <expression>" line: keep the value for the call that is running
+   this body and report FLOW_RETURN, which stops every block it is inside. */
+static Flow exec_return(const char *text, int line_num) {
+    if (call_result_depth == 0) {
+        printf(COLOR_RED "Error: 'return' can only be used inside a function on line %d" COLOR_RESET "\n", line_num);
+        return FLOW_NORMAL;
+    }
+
+    char *expression = trim_whitespace(text);
+
+    Operand value;
+    value.is_text   = 0;
+    value.int_value = 0;
+    value.text[0]   = '\0';
+
+    /* A bare "return" ends the call without a value, which is fine when the
+       call is a line of its own and an error when its value is used. */
+    if (expression[0] != '\0') {
+        if (!eval_expression(expression, line_num, &value)) {
+            free(expression);
+            return FLOW_NORMAL;
+        }
+
+        call_results[call_result_depth - 1]    = value;
+        call_result_set[call_result_depth - 1] = 1;
+    }
+
+    free(expression);
+    return FLOW_RETURN;
 }
 
 /* Execute the lines at [start, end).
@@ -514,21 +570,21 @@ static Flow exec_range(Script *script, int start, int end, int in_loop) {
            leaves i on the line after the matching "end".            */
         if (is_if_header(text)) {
             Flow flow = exec_if(script, i, in_loop, &i);
-            if (flow == FLOW_BREAK) return flow;
+            if (flow != FLOW_NORMAL) return flow;
             continue;
         }
 
         /* ── While loop ─────────────────────────────────────────────── */
         if (is_while_header(text)) {
             Flow flow = exec_while(script, i, &i);
-            if (flow == FLOW_BREAK) return flow;
+            if (flow != FLOW_NORMAL) return flow;
             continue;
         }
 
         /* ── For loop ───────────────────────────────────────────────── */
         if (is_for_header(text)) {
             Flow flow = exec_for(script, i, &i);
-            if (flow == FLOW_BREAK) return flow;
+            if (flow != FLOW_NORMAL) return flow;
             continue;
         }
 
@@ -541,6 +597,16 @@ static Flow exec_range(Script *script, int start, int end, int in_loop) {
            top-level commands. */
         if (is_fn_header(text)) {
             i = block_end_or_count(script, i);
+            continue;
+        }
+
+        /* ── Return ───────────────────────────────────────────────────
+           Ends the call that is running this body and hands back its value.
+           Outside a function there is nothing to return from.        */
+        if (is_return_line(text)) {
+            Flow flow = exec_return(text + 6, line_num);
+            if (flow != FLOW_NORMAL) return flow;
+            i++;
             continue;
         }
 
@@ -578,7 +644,7 @@ static Flow exec_range(Script *script, int start, int end, int in_loop) {
            Anything shaped like "name(...)" is a call, so a misspelled function
            is reported as a missing function rather than a missing command. */
         if (is_call_line(text)) {
-            exec_function_call(text, line_num);
+            exec_call(text, line_num, 0, NULL);
             i++;
             continue;
         }

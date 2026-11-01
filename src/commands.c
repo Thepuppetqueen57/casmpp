@@ -65,24 +65,51 @@ void cmd_input(char *args) {
 /* Handle the "out" command, which prints a value to the screen.
    Format:  out "some literal text"
        or:  out <varname>
+       or:  out <expression>
    line_num is used only for error messages. */
 void cmd_output(char *args, int line_num) {
     char *trimmed = trim_whitespace(args);
+    size_t length = strlen(trimmed);
 
-    if (trimmed[0] == '"' && trimmed[strlen(trimmed) - 1] == '"') {
+    if (length >= 2 && trimmed[0] == '"' && trimmed[length - 1] == '"') {
         /* It's a string literal — print the text between the quotes. */
-        trimmed[strlen(trimmed) - 1] = '\0'; /* remove closing quote */
-        printf("%s\n", trimmed + 1);          /* skip opening quote  */
-    } else {
-        /* It's a variable name — look it up and print its value. */
-        Variable *var = find_variable(trimmed);
-        if (var) {
-            if      (var->type == TYPE_INT) printf("%d\n", var->value.intValue);
-            else if (var->type == TYPE_STR) printf("%s\n", var->value.strValue);
-            else if (var->type == TYPE_SML) printf("%d\n", var->value.smlValue);
-        } else {
-            printf(COLOR_RED "Error: unknown variable '%s' on line %d" COLOR_RESET "\n", trimmed, line_num);
+        trimmed[length - 1] = '\0'; /* remove closing quote */
+        printf("%s\n", trimmed + 1); /* skip opening quote  */
+        free(trimmed);
+        return;
+    }
+
+    /* A plain variable prints as it always has, text included. */
+    Variable *var = find_variable(trimmed);
+    if (var) {
+        if      (var->type == TYPE_INT) printf("%d\n", var->value.intValue);
+        else if (var->type == TYPE_STR) printf("%s\n", var->value.strValue);
+        else                            printf("%d\n", var->value.smlValue);
+        free(trimmed);
+        return;
+    }
+
+    /* A bare word that is not a variable keeps the message it always had. */
+    int bare_name = trimmed[0] != '\0' && !isdigit((unsigned char)trimmed[0]);
+    for (const char *p = trimmed; *p != '\0'; p++) {
+        if (!isalnum((unsigned char)*p) && *p != '_') {
+            bare_name = 0;
+            break;
         }
+    }
+
+    if (bare_name) {
+        printf(COLOR_RED "Error: unknown variable '%s' on line %d" COLOR_RESET "\n", trimmed, line_num);
+        free(trimmed);
+        return;
+    }
+
+    /* Anything else is an expression, so "out 5 + 3" and "out double(2)"
+       print what they work out to. */
+    Operand value;
+    if (eval_expression(trimmed, line_num, &value)) {
+        if (value.is_text) printf("%s\n", value.text);
+        else               printf("%d\n", value.int_value);
     }
 
     free(trimmed);
